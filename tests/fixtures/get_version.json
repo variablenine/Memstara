@@ -1,0 +1,74 @@
+{
+ "current_height": 3780041,
+ "hard_forks": [
+  {
+   "height": 1,
+   "hf_version": 1
+  },
+  {
+   "height": 1009827,
+   "hf_version": 2
+  },
+  {
+   "height": 1141317,
+   "hf_version": 3
+  },
+  {
+   "height": 1220516,
+   "hf_version": 4
+  },
+  {
+   "height": 1288616,
+   "hf_version": 5
+  },
+  {
+   "height": 1400000,
+   "hf_version": 6
+  },
+  {
+   "height": 1546000,
+   "hf_version": 7
+  },
+  {
+   "height": 1685555,
+   "hf_version": 8
+  },
+  {
+   "height": 1686275,
+   "hf_version": 9
+  },
+  {
+   "height": 1788000,
+   "hf_version": 10
+  },
+  {
+   "height": 1788720,
+   "hf_version": 11
+  },
+  {
+   "height": 1978433,
+   "hf_version": 12
+  },
+  {
+   "height": 2210000,
+   "hf_version": 13
+  },
+  {
+   "height": 2210720,
+   "hf_version": 14
+  },
+  {
+   "height": 2688888,
+   "hf_version": 15
+  },
+  {
+   "height": 2689608,
+   "hf_version": 16
+  }
+ ],
+ "release": true,
+ "status": "OK",
+ "target_height": 0,
+ "untrusted": false,
+ "version": 196624
+}

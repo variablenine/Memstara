@@ -1,0 +1,292 @@
+/* Memstara: tokens, fonts, page frame.
+   Look rules: docs/STYLE.md. Fonts: IBM Plex (SIL OFL 1.1, see web/fonts/). */
+
+@font-face { font-family: "Plex Mono"; font-weight: 300; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-300-normal.woff2") format("woff2"); }
+@font-face { font-family: "Plex Mono"; font-weight: 400; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Plex Mono"; font-weight: 500; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Plex Mono"; font-weight: 600; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Plex Cond"; font-weight: 400; font-display: swap; src: url("../fonts/ibm-plex-sans-condensed-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Plex Cond"; font-weight: 500; font-display: swap; src: url("../fonts/ibm-plex-sans-condensed-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Plex Cond"; font-weight: 600; font-display: swap; src: url("../fonts/ibm-plex-sans-condensed-latin-600-normal.woff2") format("woff2"); }
+
+:root {
+  color-scheme: dark;
+
+  /* ground and ink: AMOLED black (pixels off), hairlines and glow tinted toward
+     the accent. Phosphor green is the default accent. */
+  --bg: #000;
+  --bg-2: #000;             /* panel surface: still black, panels are drawn by lines and glow */
+  --bg-3: #050a07;          /* raised: tiles, inputs */
+  --bg-4: #0b140f;          /* hover */
+  --line: #10261a;          /* hairline */
+  --line-2: #1b4029;        /* stronger hairline, corner ticks */
+  --ink: #d6f2e0;
+  --ink-2: #8fb19c;
+  --ink-3: #5c7a67;
+  --ink-4: #34493c;
+
+  /* accent: chrome only (ids, mark, focus, gauges, frames) */
+  --accent: #7ef0a4;
+  --accent-rgb: 126, 240, 164;
+  /* headings: panel titles and captions (cyan under the amber look) */
+  --head: var(--ink);
+  /* terminal text: log and chatter lines (pale green under the amber look) */
+  --term: var(--ink-2);
+
+  /* data series: validated pair on black (see docs/STYLE.md) */
+  --s1: #1ea2b4;
+  --s2: #8a78ec;
+
+  /* status: reserved */
+  --warn: #ffb020;
+  --warn-rgb: 255, 176, 32;
+  --bad: #ff4a3d;
+  --bad-rgb: 255, 74, 61;
+  /* light tints of the status colours, for text on a lit background */
+  --warn-ink: color-mix(in srgb, var(--warn) 40%, #fff);
+  --bad-ink: color-mix(in srgb, var(--bad) 20%, #fff);
+  --bad-ink-2: color-mix(in srgb, var(--bad) 42%, #fff);
+  --bad-ink-3: color-mix(in srgb, var(--bad) 68%, #fff);
+
+  --font-mono: "Plex Mono", ui-monospace, "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+  /* labels are monospaced too, small, uppercase and widely spaced (the console look) */
+  --font-label: "Plex Mono", ui-monospace, "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+
+  --scale: 1;
+  --fs-0: calc(10px * var(--scale));
+  --fs-1: calc(11px * var(--scale));
+  --fs-2: calc(12.5px * var(--scale));
+  --fs-3: calc(14px * var(--scale));
+  --fs-4: calc(18px * var(--scale));
+  --fs-5: calc(26px * var(--scale));
+  --fs-6: calc(40px * var(--scale));
+
+  --gap: 12px;
+  --pad: 14px;
+  --track: .12em;
+  --breathe: 7s;            /* one slow glow cycle */
+}
+
+/* Accent presets. The ground stays black; ink and hairlines lean toward the hue. */
+/* Amber: gold-amber light with cyan headings and cyan-tinted hairlines. Amber is
+   the everyday colour here, so heads-ups move to coral and problems to crimson
+   (checked apart for normal and colour-blind sight; ▲ / ■ and a word go with
+   them as everywhere). */
+:root[data-accent="amber"]    { --accent: #ffb840; --accent-rgb: 255, 184, 64; --head: #6baec8; --term: #c8e6cc; --bg-3: #06080a; --bg-4: #0d1114; --line: #131f24; --line-2: #20343c; --ink: #e8e8f0; --ink-2: #a4a4b4; --ink-3: #707080; --ink-4: #3a3a46;
+                                --warn: #ff7040; --warn-rgb: 255, 112, 64; --bad: #f0206e; --bad-rgb: 240, 32, 110; }
+:root[data-accent="ice"]      { --accent: #6fd6e8; --accent-rgb: 111, 214, 232; --bg-3: #04090c; --bg-4: #0a141a; --line: #0f212a; --line-2: #1a3a48; --ink: #d5e9f0; --ink-2: #8fabb6; --ink-3: #5b7580; --ink-4: #34474f; }
+:root[data-accent="bone"]     { --accent: #e9dfc6; --accent-rgb: 233, 223, 198; --bg-3: #0a0907; --bg-4: #15130f; --line: #221f19; --line-2: #3b362b; --ink: #f0ebdf; --ink-2: #b0a993; --ink-3: #7a7464; --ink-4: #49453b; }
+:root[data-accent="violet"]   { --accent: #b9aaff; --accent-rgb: 185, 170, 255; --bg-3: #07060d; --bg-4: #110f1c; --line: #1a1730; --line-2: #2f2a52; --ink: #e4e0fa; --ink-2: #a39dc6; --ink-3: #6f6a90; --ink-4: #423e58; }
+:root[data-accent="monero"]   { --accent: #ff7a2e; --accent-rgb: 255, 122, 46; --bg-3: #0b0604; --bg-4: #17100b; --line: #2a170c; --line-2: #4a2a16; --ink: #f6e6dc; --ink-2: #c19f8c; --ink-3: #85695a; --ink-4: #4f3d33;
+                                --warn: #ffd23f; --warn-rgb: 255, 210, 63; --bad: #f0206e; --bad-rgb: 240, 32, 110; }   /* orange is taken: heads-up yellow, problem crimson */
+
+:root[data-density="compact"] { --gap: 8px; --pad: 10px; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  line-height: 1.4;
+  overflow-x: hidden;
+}
+button, input, select { font: inherit; color: inherit; }
+h2 { margin: 0; font: inherit; }
+dl, dd, ol, ul, p, figure { margin: 0; padding: 0; }
+ol, ul { list-style: none; }
+[hidden] { display: none !important; }
+
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+
+.skip { position: absolute; left: -9999px; top: 0; z-index: 100; background: var(--bg-3); padding: 8px 12px; color: var(--ink); }
+.skip:focus { left: 8px; top: 8px; }
+
+/* ---- labels and figures shared everywhere ---- */
+.fig-label, .psub, dt, .alerts-title, .tb-sub, .clock-tag, .boot-hint, .legend, .legend-inline, .hc-title, th, summary {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: var(--track);
+}
+.fig-label { color: var(--ink-3); font-size: var(--fs-1); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+/* big numbers: a faint accent haze; with Glow on (the default) a soft glow (see the end of this file) */
+.fig-value { font-size: var(--fs-6); font-weight: 400; line-height: 1.05; letter-spacing: -.01em; color: var(--ink); text-shadow: 0 0 10px rgba(var(--accent-rgb), .12); }
+.fig-unit { font-size: .45em; letter-spacing: .02em; color: var(--ink-2); }
+.fig-note { color: var(--ink-2); font-size: var(--fs-1); letter-spacing: .04em; }
+
+/* ---- buttons ---- */
+.btn {
+  background: var(--bg-3); border: 1px solid var(--line-2); color: var(--ink-2);
+  font-family: var(--font-label); font-size: var(--fs-1); letter-spacing: var(--track); font-weight: 500;
+  padding: 6px 10px; cursor: pointer; border-radius: 2px; min-height: 30px;
+}
+.btn:hover { background: var(--bg-4); color: var(--ink); }
+.btn-primary { border-color: rgba(var(--accent-rgb), .55); color: var(--accent); }
+.btn-primary:hover { background: rgba(var(--accent-rgb), .12); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn-danger { border-color: rgba(var(--bad-rgb), .6); color: var(--bad-ink-2); }
+.btn-danger:hover:not(:disabled) { background: rgba(var(--bad-rgb), .14); color: var(--bad-ink); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.key {
+  background: transparent; border: 1px solid var(--line-2); color: var(--ink-2);
+  font-family: var(--font-label); font-size: var(--fs-0); letter-spacing: var(--track); font-weight: 600;
+  padding: 3px 8px; cursor: pointer; border-radius: 2px; min-height: 24px;
+}
+.key:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
+.key:disabled { opacity: .45; cursor: default; }
+
+/* ---- top bar ---- */
+.topbar {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--bg);
+  position: sticky; top: 0; z-index: 20;
+}
+.tb-left { display: flex; align-items: center; gap: 12px; min-width: 0; margin-right: auto; padding-right: 8px; }
+.mark { display: block; flex: none; }
+:root:not([data-accent="phosphor"]):not([data-accent="amber"]) .mark { filter: grayscale(1) brightness(1.4); }
+:root[data-accent="amber"] .mark { filter: hue-rotate(-100deg) saturate(1.4); }
+.tb-name { font-family: var(--font-label); font-weight: 600; font-size: var(--fs-3); letter-spacing: .2em; }
+.tb-sub { color: var(--ink-3); font-size: var(--fs-0); overflow-wrap: anywhere; }
+.tb-right, .tb-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tb-icon { display: inline-block; min-width: 1ch; text-align: center; }
+
+.overall {
+  display: flex; align-items: center; gap: 8px; padding: 5px 10px; border: 1px solid var(--line-2);
+  font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-1); font-weight: 600; color: var(--ink-2);
+  min-height: 30px;
+}
+.overall .ov-glyph { color: var(--ink-3); }
+.overall[data-level="ok"] .ov-glyph { color: var(--accent); }
+.overall[data-level="warn"] { border-color: rgba(var(--warn-rgb), .6); color: var(--warn); background: rgba(var(--warn-rgb), .08); }
+.overall[data-level="warn"] .ov-glyph { color: var(--warn); }
+.overall[data-level="bad"] { border-color: rgba(var(--bad-rgb), .7); color: var(--bad-ink); background: rgba(var(--bad-rgb), .16); }
+.overall[data-level="bad"] .ov-glyph { color: var(--bad); }
+.overall[data-level="lost"] { border-color: var(--ink-3); color: var(--ink-2); }
+
+.mode {
+  font-family: var(--font-label); font-size: var(--fs-1); letter-spacing: var(--track); font-weight: 600;
+  padding: 5px 10px; border: 1px dashed var(--ink-3); color: var(--ink-2); min-height: 30px; display: flex; align-items: center;
+}
+.mode > span { white-space: pre; }   /* keep the spaces around " · " between the parts */
+.mode[data-mode="live"] { border-style: solid; border-color: rgba(var(--accent-rgb), .5); color: var(--accent); }
+
+.clock { display: flex; align-items: baseline; gap: 6px; padding: 0 4px; }
+.clock-time { font-size: var(--fs-3); font-variant-numeric: tabular-nums; }
+.clock-tag { color: var(--ink-3); font-size: var(--fs-0); }
+
+.conn-banner {
+  margin: 10px 16px 0; padding: 10px 14px; border: 1px solid rgba(var(--bad-rgb), .6);
+  background: rgba(var(--bad-rgb), .1); color: var(--bad-ink); font-family: var(--font-label); letter-spacing: .06em;
+}
+/* a heads-up (a restricted RPC port) in the heads-up colour; a problem stays in the problem colour */
+.conn-banner[data-level="warn"] { border-color: rgba(var(--warn-rgb), .6); background: rgba(var(--warn-rgb), .08); color: var(--warn-ink); }
+
+/* ---- alerts strip ---- */
+.alerts { margin: 12px 16px 0; border: 1px solid var(--line); background: var(--bg-2); }
+.alerts-head { display: flex; gap: 12px; align-items: baseline; padding: 8px var(--pad); border-bottom: 1px solid var(--line); }
+.alerts-title { font-size: var(--fs-1); font-weight: 600; color: var(--ink-2); }
+.alerts-tally { color: var(--ink-3); font-size: var(--fs-1); }
+.alerts-list:empty { display: none; }
+.alert-row {
+  display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; gap: 12px; align-items: baseline;
+  padding: 8px var(--pad); border-top: 1px solid var(--line);
+}
+.alert-row:first-child { border-top: 0; }
+.alert-tag { font-family: var(--font-label); font-weight: 600; letter-spacing: var(--track); font-size: var(--fs-1); }
+.alert-row[data-level="bad"] { background: rgba(var(--bad-rgb), .09); }
+.alert-row[data-level="bad"] .alert-tag { color: var(--bad); }
+.alert-row[data-level="warn"] .alert-tag { color: var(--warn); }
+.alert-title { font-family: var(--font-label); letter-spacing: .08em; font-weight: 600; margin-right: 8px; }
+.alert-text { color: var(--ink-2); }
+.alert-ips { color: var(--ink-3); font-size: var(--fs-1); display: block; margin-top: 2px; overflow-wrap: anywhere; }
+.alert-since { color: var(--ink-3); font-size: var(--fs-1); white-space: nowrap; }
+.alert-src { color: var(--ink-4); }
+
+/* ---- grid ---- */
+.grid {
+  display: grid; gap: var(--gap); padding: var(--gap) 16px 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row dense;
+}
+.span-2 { grid-column: span 2; }
+.span-full { grid-column: 1 / -1; }
+@media (max-width: 1399px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 899px) {
+  .grid { grid-template-columns: minmax(0, 1fr); padding: var(--gap) 12px 16px; }
+  .span-2 { grid-column: span 1; }
+  /* the top bar in two rows: the title with the two buttons (as icons), then the
+     state chips; the chip says LIVE without the address, the clock drops LOCAL */
+  .topbar { padding: 8px 12px; gap: 8px 10px; }
+  .tb-left { flex: 1 1 0; padding-right: 0; gap: 10px; }
+  .tb-actions { order: 1; gap: 6px; flex-wrap: nowrap; }
+  .tb-right { order: 2; flex: 1 1 100%; gap: 8px; }
+  .tb-word, .clock-tag, .mode-where { display: none; }
+  .tb-actions .btn { min-width: 36px; padding: 6px 8px; font-size: var(--fs-2); letter-spacing: 0; }
+  .alerts { margin: 10px 12px 0; }
+  .alert-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+/* ---- status bar / nameplate ---- */
+.statusbar {
+  border-top: 1px solid var(--line); padding: 10px 16px 18px; color: var(--ink-3);
+  font-size: var(--fs-1); display: grid; gap: 4px;
+}
+.sb-vitals { font-family: var(--font-label); letter-spacing: .1em; overflow-wrap: anywhere; }
+.sb-vitals b { color: var(--ink-2); font-weight: 500; }
+.sb-plate { color: var(--ink-4); letter-spacing: .06em; overflow-wrap: anywhere; }
+
+/* ---- start-up check ---- */
+.boot {
+  position: fixed; inset: 0; z-index: 90; background: var(--bg);
+  display: grid; place-items: center; padding: 24px; cursor: pointer;
+}
+.boot-inner { width: min(560px, 100%); }
+.boot-title { font-family: var(--font-label); letter-spacing: .3em; font-weight: 600; font-size: var(--fs-4); color: var(--accent); margin-bottom: 18px; }
+.boot-lines { display: grid; gap: 4px; min-height: 180px; }
+.boot-lines li { display: flex; gap: 8px; color: var(--ink-2); }
+.boot-lines .bl-dots { flex: 1; border-bottom: 1px dotted var(--ink-4); transform: translateY(-5px); }
+.boot-lines .bl-ok { color: var(--accent); }
+.boot-lines .bl-warn { color: var(--warn); }
+.boot-lines .bl-bad { color: var(--bad); }
+.boot-hint { color: var(--ink-3); font-size: var(--fs-0); margin-top: 22px; text-align: center; }
+
+/* ---- tooltip ---- */
+.tooltip {
+  position: fixed; z-index: 80; pointer-events: none; max-width: 300px;
+  background: #000; border: 1px solid var(--line-2); padding: 8px 10px; font-size: var(--fs-1);
+  box-shadow: 0 6px 24px rgba(0,0,0,.5);
+}
+.tooltip .tt-head { font-family: var(--font-label); letter-spacing: var(--track); color: var(--ink-3); margin-bottom: 4px; }
+.tooltip .tt-row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.tooltip .tt-row b { font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
+.tooltip .tt-row span { color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.tooltip .tt-note { color: var(--ink-3); margin-top: 6px; line-height: 1.45; font-family: var(--font-label); letter-spacing: .02em; font-size: var(--fs-1); }
+
+/* ---- screen effects (optional) ---- */
+/* The scanlines are one 3 px tile repeated, not a repeating-linear-gradient: WebKitGTK
+   draws a repeating gradient on this fixed, composited layer as wide soft stripes. */
+.fx-scan { position: fixed; inset: 0; pointer-events: none; z-index: 70; display: none; }
+:root[data-scanlines="on"] .fx-scan {
+  display: block;
+  background:
+    linear-gradient(to bottom, rgba(255,255,255,.018) 1px, transparent 1px) 0 0 / 100% 3px,
+    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.35) 100%);
+}
+/* the soft glow on big numbers; a number lit as a heads-up or problem glows in that colour */
+:root[data-glow="on"] .fig-value, :root[data-glow="on"] .br-age, :root[data-glow="on"] .pc-val { text-shadow: 0 0 10px rgba(var(--accent-rgb), .5); }
+:root[data-glow="on"] .figure[data-level="warn"] .fig-value, :root[data-glow="on"] .blockring[data-level="warn"] .br-age,
+:root[data-glow="on"] .pc-val[data-level="warn"] { text-shadow: 0 0 10px rgba(var(--warn-rgb), .5); }
+:root[data-glow="on"] .figure[data-level="bad"] .fig-value, :root[data-glow="on"] .blockring[data-level="bad"] .br-age,
+:root[data-glow="on"] .pc-val[data-level="bad"] { text-shadow: 0 0 10px rgba(var(--bad-rgb), .5); }
+:root[data-glow="on"] .pc-val[data-level="off"] { text-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+:root[data-motion="off"] *, :root[data-motion="off"] *::before, :root[data-motion="off"] *::after { animation: none !important; transition: none !important; }
+
+@media (forced-colors: active) {
+  .lamp[data-state="warn"], .lamp[data-state="bad"] { border: 2px solid CanvasText; }
+}

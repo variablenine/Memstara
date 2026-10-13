@@ -1,0 +1,155 @@
+{
+ "credits": 0,
+ "height": 3779738,
+ "next_needed_pruning_seed": 0,
+ "overview": "[oooooo....]",
+ "peers": [
+  {
+   "info": {
+    "address": "100.112.165.134:18080",
+    "address_type": 1,
+    "avg_download": 15,
+    "avg_upload": 26,
+    "connection_id": "3352cc8fd17902e1d733b4c91e130f91",
+    "current_download": 76,
+    "current_upload": 19,
+    "height": 3781708,
+    "host": "100.112.165.134",
+    "incoming": false,
+    "ip": "100.112.165.134",
+    "live_time": 28603,
+    "local_ip": false,
+    "localhost": false,
+    "peer_id": "ccae586a984b9174",
+    "port": "18080",
+    "pruning_seed": 0,
+    "recv_count": 1244434,
+    "recv_idle_time": 20,
+    "rpc_credits_per_hash": 0,
+    "rpc_port": 0,
+    "send_count": 29428081,
+    "send_idle_time": 27,
+    "state": "synchronizing",
+    "support_flags": 1
+   }
+  },
+  {
+   "info": {
+    "address": "100.67.55.220:18080",
+    "address_type": 1,
+    "avg_download": 31,
+    "avg_upload": 43,
+    "connection_id": "230a4c28d2cd189bc3af8a8326513359",
+    "current_download": 20,
+    "current_upload": 9,
+    "height": 3781708,
+    "host": "100.67.55.220",
+    "incoming": false,
+    "ip": "100.67.55.220",
+    "live_time": 1939,
+    "local_ip": false,
+    "localhost": false,
+    "peer_id": "1f4b8e2d62b8861e",
+    "port": "18080",
+    "pruning_seed": 386,
+    "recv_count": 2297764,
+    "recv_idle_time": 2,
+    "rpc_credits_per_hash": 0,
+    "rpc_port": 0,
+    "send_count": 3006116,
+    "send_idle_time": 34,
+    "state": "synchronizing",
+    "support_flags": 1
+   }
+  },
+  {
+   "info": {
+    "address": "100.68.11.97:18080",
+    "address_type": 1,
+    "avg_download": 67,
+    "avg_upload": 72,
+    "connection_id": "1bb7ed0b4a4361b322b5d9ea1c81addb",
+    "current_download": 37,
+    "current_upload": 62,
+    "height": 3781708,
+    "host": "100.68.11.97",
+    "incoming": false,
+    "ip": "100.68.11.97",
+    "live_time": 30179,
+    "local_ip": false,
+    "localhost": false,
+    "peer_id": "8e66e9407955a77f",
+    "port": "18080",
+    "pruning_seed": 0,
+    "recv_count": 43501419,
+    "recv_idle_time": 23,
+    "rpc_credits_per_hash": 0,
+    "rpc_port": 0,
+    "send_count": 32469738,
+    "send_idle_time": 26,
+    "state": "synchronizing",
+    "support_flags": 1
+   }
+  }
+ ],
+ "spans": [
+  {
+   "connection_id": "3352cc8fd17902e1d733b4c91e130f91",
+   "nblocks": 20,
+   "rate": 694980,
+   "remote_address": "100.112.165.134:18080",
+   "size": 1800000,
+   "speed": 72,
+   "start_block_height": 3779738
+  },
+  {
+   "connection_id": "230a4c28d2cd189bc3af8a8326513359",
+   "nblocks": 20,
+   "rate": 319867,
+   "remote_address": "100.67.55.220:18080",
+   "size": 1800000,
+   "speed": 55,
+   "start_block_height": 3779758
+  },
+  {
+   "connection_id": "1bb7ed0b4a4361b322b5d9ea1c81addb",
+   "nblocks": 20,
+   "rate": 604720,
+   "remote_address": "100.68.11.97:18080",
+   "size": 1800000,
+   "speed": 88,
+   "start_block_height": 3779778
+  },
+  {
+   "connection_id": "9f070f066bba1200b4472bf633800df6",
+   "nblocks": 20,
+   "rate": 385065,
+   "remote_address": "100.112.111.29:18080",
+   "size": 1800000,
+   "speed": 57,
+   "start_block_height": 3779798
+  },
+  {
+   "connection_id": "391140010e4ca14f981ce257cfd07938",
+   "nblocks": 20,
+   "rate": 494861,
+   "remote_address": "100.125.138.235:18080",
+   "size": 1800000,
+   "speed": 63,
+   "start_block_height": 3779818
+  },
+  {
+   "connection_id": "d440f52719698a63ccab2b89fbfe7568",
+   "nblocks": 20,
+   "rate": 831428,
+   "remote_address": "100.68.50.134:18080",
+   "size": 1800000,
+   "speed": 100,
+   "start_block_height": 3779838
+  }
+ ],
+ "status": "OK",
+ "target_height": 3781708,
+ "top_hash": "",
+ "untrusted": false
+}

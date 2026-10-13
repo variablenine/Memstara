@@ -1,0 +1,77 @@
+/* CHAIN screen hero: the block stream and its readouts */
+.bs { position: relative; min-height: inherit; }
+.bs-view { position: relative; height: 400px; min-width: 0; }
+.bs-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+.bs-canvas:active { cursor: grabbing; }
+.bs-view[data-state="down"] .bs-canvas { opacity: .55; }
+
+/* readouts over the top corners */
+.bs-facts {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 2; pointer-events: none;
+  display: flex; justify-content: space-between; gap: 24px; padding: 12px 16px 0;
+  font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-0); color: var(--ink-3);
+}
+.bs-facts-l, .bs-facts-r { display: grid; gap: 3px; align-content: start; min-width: 0; }
+.bs-facts-r { justify-items: end; text-align: right; }
+.bs-fl { font-weight: 600; color: var(--ink-3); }
+.bs-v { font-family: var(--font-mono); font-weight: 400; color: var(--ink); letter-spacing: .04em; font-size: var(--fs-1); }
+.bs-facts span, .bs-facts b, .bs-fl { text-shadow: 0 0 3px #000, 0 0 8px #000; }
+.bs-facts .bs-big {
+  font-size: var(--fs-5); line-height: 1.05; letter-spacing: .02em; margin: 1px 0 5px; white-space: nowrap;
+  text-shadow: 0 0 10px rgba(var(--accent-rgb), .5), 0 0 3px #000;
+}
+:root[data-glow="off"] .bs-facts .bs-big { text-shadow: 0 0 3px #000; }
+/* a long wait ("2 h 05 min") keeps its number on one line; the unit drops under it when short of room */
+.bs-bigline { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; column-gap: 7px; }
+.bs-unit { font-family: var(--font-label); font-weight: 600; font-size: var(--fs-0); color: var(--ink-3); }
+.bs-row { display: flex; gap: 10px; align-items: baseline; }
+.bs-facts-l .bs-row span { min-width: 138px; }
+.bs-fnote { color: var(--ink-2); }
+.bs-v[data-level="warn"], .bs-unit[data-level="warn"] { color: var(--warn); }
+.bs-v[data-level="bad"], .bs-unit[data-level="bad"] { color: var(--bad); }
+.bs-facts .bs-big[data-level="warn"] { text-shadow: 0 0 10px rgba(var(--warn-rgb), .5), 0 0 3px #000; }
+.bs-facts .bs-big[data-level="bad"] { text-shadow: 0 0 10px rgba(var(--bad-rgb), .5), 0 0 3px #000; }
+
+/* legend and hint along the bottom */
+.bs-legend { left: 16px; bottom: 12px; display: flex; gap: 6px 18px; flex-wrap: wrap; max-width: calc(100% - 330px); }
+.bs-lg { display: inline-flex; align-items: center; gap: 7px; }
+.bs-g { position: relative; display: inline-block; flex: none; width: 14px; height: 9px; }
+.bs-g::before, .bs-g::after {
+  content: ""; position: absolute; bottom: 0; border: 1px solid rgba(var(--accent-rgb), .9);
+  box-shadow: 0 0 5px rgba(var(--accent-rgb), .55), inset 0 0 3px rgba(var(--accent-rgb), .25);
+}
+.bs-g-size::before { left: 0; width: 5px; height: 5px; }
+.bs-g-size::after { right: 0; width: 8px; height: 8px; }
+.bs-g-gap { width: 18px; }
+.bs-g-gap::before { left: 0; width: 6px; height: 6px; }
+.bs-g-gap::after { right: 0; width: 6px; height: 6px; }
+.bs-g-next { width: 9px; }
+.bs-g-next::before { left: 0; width: 8px; height: 8px; border-style: dashed; box-shadow: none; }
+.bs-g-next::after { display: none; }
+.bs-hint { right: 16px; bottom: 12px; color: var(--ink-4); }
+
+.bs-empty {
+  position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%); z-index: 3; max-width: min(640px, 90%);
+  text-align: center; font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-1); color: var(--ink-2);
+  border: 1px solid var(--line-2); background: rgba(0, 0, 0, .82); padding: 10px 14px;
+}
+
+@media (max-width: 1100px) {
+  .bs-hint { display: none; }
+  .bs-legend { max-width: calc(100% - 32px); }
+}
+
+/* phone: the readouts move under the picture */
+@media (max-width: 899px) {
+  .bs-view { height: 300px; }
+  .bs-facts {
+    position: static; padding: 10px 12px 12px; border-top: 1px solid var(--line); gap: 14px;
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .bs-facts-r { justify-items: start; text-align: left; }
+  .bs-facts-r .bs-bigline { justify-content: flex-start; }
+  .bs-row { flex-direction: column; gap: 1px; }
+  .bs-facts-l .bs-row span { min-width: 0; }
+  .bs-facts .bs-big { font-size: var(--fs-4); margin-bottom: 4px; }
+  .bs-legend { position: static; padding: 0 12px 12px; gap: 4px 14px; max-width: none; }
+}

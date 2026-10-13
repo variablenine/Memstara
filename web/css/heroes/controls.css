@@ -1,0 +1,103 @@
+/* CONTROLS screen hero: the ban clock and its side column in words */
+.bn { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 268px); min-height: inherit; height: 100%; }
+.bn-view { position: relative; min-width: 0; min-height: 470px; }
+.bn-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* the centre readout */
+.bn-core {
+  position: absolute; z-index: 2; transform: translate(-50%, -50%); pointer-events: none;
+  display: grid; justify-items: center; text-align: center; gap: 3px;
+  font-family: var(--font-label); letter-spacing: var(--track); text-transform: uppercase;
+}
+.bn-core-n {
+  font-family: var(--font-mono); font-weight: 600; font-size: var(--fs-6); line-height: 1; color: var(--ink); letter-spacing: .02em;
+  text-shadow: 0 0 10px rgba(var(--accent-rgb), .5), 0 0 26px rgba(var(--accent-rgb), .25);
+}
+.bn-core-l { font-size: var(--fs-0); color: var(--ink-2); line-height: 1.35; text-wrap: balance; }
+.bn-core-rule { width: 34px; height: 1px; margin: 5px 0 4px; background: linear-gradient(90deg, transparent, rgba(var(--accent-rgb), .55), transparent); }
+.bn-core-long { font-size: var(--fs-0); color: var(--ink-2); }
+.bn-core-long b { font-family: var(--font-mono); font-weight: 600; font-size: var(--fs-3); color: var(--ink); letter-spacing: .02em; margin-right: 2px; }
+.bn-core-src { font-size: var(--fs-0); color: var(--ink-4); line-height: 1.35; text-wrap: balance; }
+.bn-view[data-state="none"] .bn-core-l { color: var(--ink); font-size: var(--fs-1); letter-spacing: .14em; line-height: 1.5; }
+.bn-view[data-state="off"] .bn-core-n, .bn-view[data-state="hidden"] .bn-core-n, .bn-view[data-state="wait"] .bn-core-n { color: var(--ink-3); text-shadow: none; }
+.bn-small .bn-core-n { font-size: var(--fs-5); }
+.bn-small .bn-core-rule { margin: 3px 0 2px; }
+.bn-small .bn-core-long b { font-size: var(--fs-2); }
+
+/* centred by auto margins between 12px insets, so it may use the view's whole width (left: 50% halved it) */
+.bn-empty {
+  position: absolute; left: 12px; right: 12px; bottom: 14px; margin: 0 auto; width: fit-content; z-index: 3; max-width: 520px;
+  text-align: center; font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-0); color: var(--ink-2); line-height: 1.5;
+  border: 1px solid var(--line-2); background: rgba(0, 0, 0, .82); padding: 8px 12px;
+}
+
+/* the side column: the bans in words */
+.bn-side {
+  border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: linear-gradient(180deg, rgba(var(--accent-rgb), .025), transparent 40%);
+}
+.bn-side-head {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--line); font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-1); font-weight: 600; color: var(--head);
+}
+.bn-side-sub { color: var(--ink-4); font-weight: 500; font-size: var(--fs-0); }
+.bn-side-body { display: flex; flex-direction: column; gap: 14px; padding: 12px 14px 12px; flex: 1; min-height: 0; }
+.bn-k { font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-0); color: var(--ink-3); text-transform: uppercase; }
+.bn-big { display: grid; gap: 3px; }
+.bn-big b {
+  font-family: var(--font-mono); font-weight: 600; font-size: 26px; line-height: 1.1; color: var(--ink); letter-spacing: .02em;
+  text-shadow: 0 0 10px rgba(var(--accent-rgb), .5);
+}
+.bn-big-sub { font-family: var(--font-label); letter-spacing: .08em; font-size: var(--fs-0); color: var(--ink-2); line-height: 1.45; }
+.bn-next { display: grid; gap: 3px; padding-top: 10px; border-top: 1px solid var(--line); }
+.bn-next-host { font-family: var(--font-mono); font-weight: 500; font-size: var(--fs-2); color: var(--ink); overflow-wrap: anywhere; letter-spacing: .02em; }
+.bn-next-when { font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+.bn-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.bn-lg { display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-0); color: var(--ink-3); }
+.bn-lg::before { content: ""; display: inline-block; width: 18px; border-radius: 1px; background: var(--accent); box-shadow: 0 0 7px rgba(var(--accent-rgb), .8); }
+.bn-lg-one::before { height: 2px; }
+.bn-lg-range::before { height: 6px; }
+
+.bn-list-head { font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-0); color: var(--ink-3); margin-bottom: -8px; }
+.bn-list { display: grid; }
+.bn-row {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 9px; align-items: center;
+  padding: 5px 4px 5px 0; border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.bn-row:last-child { border-bottom: 0; }
+.bn-row:hover, .bn-row.is-on { background: linear-gradient(90deg, rgba(var(--accent-rgb), .10), transparent 90%); }
+.bn-row-h { display: grid; min-width: 0; }
+.bn-row-h b { font-family: var(--font-mono); font-weight: 500; font-size: var(--fs-1); color: var(--ink); overflow-wrap: anywhere; }
+.bn-row-h small { font-family: var(--font-label); letter-spacing: .08em; font-size: var(--fs-0); color: var(--ink-3); }
+.bn-row-t { font-family: var(--font-mono); font-size: var(--fs-0); color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bn-g { display: block; width: 18px; height: 2px; border-radius: 1px; background: var(--accent); box-shadow: 0 0 6px rgba(var(--accent-rgb), .7); }
+.bn-g-range { height: 6px; }
+.bn-more { font-family: var(--font-label); letter-spacing: .06em; font-size: var(--fs-0); color: var(--ink-2); line-height: 1.5; }
+/* node not answering: the bans in words are the last reading's, dimmed like the rings */
+.bn[data-state="off"] .bn-next-host, .bn[data-state="off"] .bn-next-when, .bn[data-state="off"] .bn-list, .bn[data-state="off"] .bn-more { opacity: .6; }
+.bn[data-state="off"] .bn-big b { color: var(--ink-3); text-shadow: none; }
+
+.bn-cap { color: var(--ink-3); font-size: var(--fs-0); line-height: 1.55; font-family: var(--font-label); letter-spacing: .02em; }
+.bn-hint { color: var(--ink-4); font-size: var(--fs-0); font-family: var(--font-label); letter-spacing: var(--track); line-height: 1.5; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
+.bn-hint.is-note { color: var(--accent); text-shadow: 0 0 10px rgba(var(--accent-rgb), .4); }
+
+/* the CONTROLS panel's row for a ban picked on the clock: lit for a few seconds */
+#ban-list li.bn-found {
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), .16), rgba(var(--accent-rgb), .03) 85%);
+  outline: 1px solid rgba(var(--accent-rgb), .5); outline-offset: 2px;
+}
+#ban-list li.bn-found .cl-host { color: var(--accent); text-shadow: 0 0 10px rgba(var(--accent-rgb), .45); }
+:root[data-motion="full"] #ban-list li.bn-found { animation: bn-found 3.4s ease-out both; }
+@keyframes bn-found {
+  0%, 16%, 32% { background-color: rgba(var(--accent-rgb), .30); }
+  8%, 24% { background-color: transparent; }
+  60%, 100% { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { :root[data-motion="full"] #ban-list li.bn-found { animation: none; } }
+
+@media (max-width: 899px) {
+  .bn { grid-template-columns: minmax(0, 1fr); }
+  .bn-view { min-height: 372px; }
+  .bn-side { border-left: 0; border-top: 1px solid var(--line); }
+}

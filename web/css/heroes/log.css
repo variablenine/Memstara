@@ -1,0 +1,97 @@
+/* LOG screen hero: the event timeline (readouts, the lanes, the terminal line) */
+/* a wide, low strip: shorter than the other heroes */
+#p-hero-log .hero-body { min-height: 0; }
+.et { display: grid; grid-template-rows: auto auto auto; min-width: 0; }
+
+/* readouts across the top */
+.et-hud {
+  position: relative; z-index: 2; pointer-events: none;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 30px; padding: 12px 16px 6px;
+  font-family: var(--font-label); letter-spacing: var(--track); text-transform: uppercase;
+}
+.et-stat { display: grid; gap: 3px; min-width: 0; }
+.et-l { font-size: var(--fs-0); color: var(--ink-3); white-space: nowrap; }
+.et-v { font-family: var(--font-mono); font-weight: 400; font-size: var(--fs-2); color: var(--ink); letter-spacing: .04em; white-space: nowrap; line-height: 1.2; }
+.et-v[data-level="warn"] { color: var(--warn); text-shadow: 0 0 10px rgba(var(--warn-rgb), .45); }
+.et-v[data-level="bad"] { color: var(--bad); text-shadow: 0 0 10px rgba(var(--bad-rgb), .5); }
+/* only a problem that is still up pulses (log.js sets data-live); one that has cleared stays steady */
+:root[data-motion="full"] .et-v[data-level="bad"][data-live] { animation: et-alarm 1.2s ease-in-out infinite; }
+@keyframes et-alarm { 50% { opacity: .55; } }
+.et-big { margin-right: 6px; }
+.et-bigv {
+  font-family: var(--font-mono); font-weight: 600; font-size: 26px; line-height: 1; color: var(--ink); letter-spacing: .02em;
+  text-shadow: 0 0 10px rgba(var(--accent-rgb), .5);
+}
+:root[data-glow="off"] .et-bigv { text-shadow: none; }
+
+.et-legend { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: var(--fs-0); color: var(--ink-3); padding-bottom: 2px; }
+.et-lg { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.et-lg::before { content: ""; display: inline-block; flex: none; }
+.et-lg-ev::before { width: 2px; height: 12px; background: var(--accent); box-shadow: 0 0 6px rgba(var(--accent-rgb), .9), 0 0 12px rgba(var(--accent-rgb), .5); }
+.et-lg-warn::before { content: "▲"; color: var(--warn); font-size: 10px; text-shadow: 0 0 8px rgba(var(--warn-rgb), .7); }
+.et-lg-bad::before { content: "■"; color: var(--bad); font-size: 10px; text-shadow: 0 0 8px rgba(var(--bad-rgb), .7); }
+.et-lg-peer::before {
+  width: 2px; height: 14px;
+  background: linear-gradient(var(--accent) 0 45%, transparent 45% 62%, rgba(var(--accent-rgb), .6) 62%);
+  box-shadow: 0 0 6px rgba(var(--accent-rgb), .6);
+}
+
+/* the lanes */
+.et-view { position: relative; height: 248px; margin-top: -20px; min-width: 0; }   /* reaches 20 px up under the readouts (log.js RISE) */
+.et-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#p-hero-log .et-canvas:focus-visible { outline: none; }   /* log.js draws the focus frame round the lanes */
+.et-note {
+  position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); z-index: 2; max-width: min(560px, 86%);
+  text-align: center; font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-0); color: var(--ink-2);
+  border: 1px solid var(--line-2); background: rgba(0, 0, 0, .82); padding: 8px 14px; pointer-events: none;
+}
+
+/* the terminal line: the newest event, typed out */
+.et-tk {
+  display: flex; align-items: baseline; gap: 12px; min-width: 0; padding: 9px 16px 11px;
+  border-top: 1px solid var(--line); background: linear-gradient(90deg, rgba(var(--accent-rgb), .045), transparent 55%);
+  font-family: var(--font-mono); font-size: var(--fs-1); line-height: 1.45;
+}
+.et-tk-p { flex: none; font-family: var(--font-label); font-size: var(--fs-0); letter-spacing: var(--track); color: var(--ink-4); }
+.et-tk-line { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.et-tk-t { flex: none; color: var(--ink-4); font-variant-numeric: tabular-nums; }
+.et-tk-g { flex: none; color: var(--head); letter-spacing: .04em; }
+.et-tk-body { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.et-tk-f { font-weight: 600; letter-spacing: .04em; }
+.et-tk-x { color: var(--term); }
+.et-tk-c {
+  display: inline-block; width: .62em; height: 1.1em; margin-left: 3px; vertical-align: text-bottom; background: var(--accent);
+  opacity: .85; box-shadow: 0 0 8px rgba(var(--accent-rgb), .6);
+}
+:root[data-motion="full"] .et-tk-c { animation: et-blink 1.05s steps(1, end) infinite; }
+@keyframes et-blink { 50% { opacity: 0; } }
+.et-tk-line[data-level="ok"] .et-tk-g { color: var(--accent); }
+.et-tk-line[data-level="warn"] .et-tk-g, .et-tk-line[data-level="warn"] .et-tk-f { color: var(--warn); }
+.et-tk-line[data-level="bad"] .et-tk-g, .et-tk-line[data-level="bad"] .et-tk-f { color: var(--bad); }
+.et-tk-line[data-lane="block"] .et-tk-x { color: var(--ink); }
+.et-tk-line.is-idle .et-tk-x { color: var(--ink-4); font-family: var(--font-label); letter-spacing: .08em; font-size: var(--fs-0); }
+:root[data-motion="full"] .et-tk-line.is-new { animation: et-land 1.4s ease-out; }
+@keyframes et-land { from { text-shadow: 0 0 12px rgba(var(--accent-rgb), .9); } to { text-shadow: none; } }
+.et-hint { flex: none; margin-left: auto; color: var(--ink-4); font-family: var(--font-label); font-size: var(--fs-0); letter-spacing: var(--track); white-space: nowrap; }
+
+/* how far back: a small switch in the header */
+.et-span button { min-height: 24px; padding: 3px 10px; }
+
+@media (max-width: 899px) {
+  .et-hint { display: none; }
+}
+@media (max-width: 639px) {
+  .et-hud { gap: 8px 18px; padding: 10px 12px 6px; }
+  .et-big { flex-basis: 100%; display: flex; align-items: baseline; gap: 10px; }
+  .et-big .et-l { order: 2; white-space: normal; }
+  .et-s-kept { display: none; }
+  .et-legend { margin-left: 0; flex-basis: 100%; gap: 4px 12px; }
+  .et-view { height: 260px; }
+  .et-tk { padding: 8px 12px 10px; gap: 8px; }
+  .et-tk-p { display: none; }
+  .et-tk-line { flex-wrap: wrap; row-gap: 0; }
+  .et-tk-body {
+    flex-basis: 100%; white-space: normal; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  }
+}

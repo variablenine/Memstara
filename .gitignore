@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# add-ons are made for one setup: never committed by accident (only the guide is)
+/addons/*
+!/addons/README.md
