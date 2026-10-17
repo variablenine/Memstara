@@ -1,8 +1,6 @@
 """Alert rules. Pure logic: the caller passes in observations and the time.
 
-The core's rules read RPC. Add-ons' alerts come in as they give them (see
-evaluate()); an add-on alert with the id of a core alert is ignored, so the
-dashboard's own reading always wins. "Must last" grace periods are measured in poll
+The rules read RPC. "Must last" grace periods are measured in poll
 time: a condition's clock starts at the first poll that sees it, and the alert fires
 once it has lasted the grace period.
 """
@@ -118,7 +116,6 @@ def empty_obs() -> dict:
         "out16": None, "in24": None,
         "flood": None,          # snapshot.chain.flood (flood.py)
         "computer": None,       # snapshot.host.computer, or None when this computer isn't read
-        "addon_alerts": {},     # {add-on name: [alert] or None}; see AlertEngine.evaluate
     }
 
 
@@ -134,7 +131,6 @@ class AlertEngine:
         self._active: dict = {}
         self._ds_last = None   # (time, count) of the last double-spend sighting
         self._ds_first = None
-        self._addon_first: dict = {}   # (add-on, id) -> first seen, for alerts that bring no `since`
 
     # condition clocks
     def _held(self, name, cond, now):
@@ -149,23 +145,15 @@ class AlertEngine:
             self._since.pop(n, None)
 
     def evaluate(self, obs: dict, cfg: dict, now: float):
-        """Returns (active alerts worst-first, events).
-
-        obs["addon_alerts"] is {add-on name: list or None}, as checked by addons.Addons.alerts.
-        An add-on's alert is shown as given (`source` is the add-on's name); one with the id of
-        a core alert, or of an alert another add-on (earlier in name order) raised, is ignored.
-        None means the add-on can't tell right now: its alerts stay as they are, neither shown
-        nor cleared. {"id": X, "hold": true} does the same for one alert. An add-on missing from
-        the dict (turned off, removed) loses its alerts without "Cleared" events.
-        """
+        """Returns (active alerts worst-first, events)."""
         mins = lambda secs: int(secs // 60)
         grace = lambda key: cfg[key] * 60.0
         found: dict = {}
         paused: set = set()
 
-        def add(aid, level, text, since, ips=None, source="dashboard", title=None):
-            found[aid] = {"id": aid, "level": level, "title": title or title_for(aid, level), "text": text,
-                          "since": int(since), "source": source, "ips": ips}
+        def add(aid, level, text, since, ips=None):
+            found[aid] = {"id": aid, "level": level, "title": title_for(aid, level), "text": text,
+                          "since": int(since), "source": "dashboard", "ips": ips}
 
         # ---- node_down
         d = self._held("node_down", not obs.get("answering"), now)
@@ -182,44 +170,9 @@ class AlertEngine:
             self._rpc_rules(obs, cfg, now, mins, grace, add, paused)
         self._computer_rules(obs.get("computer"), cfg, now, mins, grace, add, paused)
 
-        # ---- add-ons' alerts, shown as they give them
-        from_addons = obs.get("addon_alerts") or {}
-        for name, items in from_addons.items():
-            mine = {aid for aid, a in self._active.items() if a["source"] == name}
-            if items is None:
-                paused.update(mine)          # first-seen times are kept meanwhile
-                continue
-            seen = set()
-            for a in items:
-                aid = a.get("id")
-                if not aid or aid in DASHBOARD_IDS:
-                    continue
-                if a.get("hold"):
-                    if aid in mine and aid not in found:
-                        paused.add(aid)
-                        seen.add(aid)
-                    continue
-                level = a.get("level") if a.get("level") in ("warn", "bad") else "warn"
-                if aid in found and (found[aid]["source"] != name
-                                     or LEVEL_RANK[found[aid]["level"]] <= LEVEL_RANK[level]):
-                    continue
-                if (aid in self._active and self._active[aid]["source"] not in (name, "dashboard")
-                        and self._active[aid]["source"] in from_addons):
-                    continue                 # another add-on raised this id first
-                seen.add(aid)
-                since = a.get("since")
-                if not isinstance(since, (int, float)):
-                    since = self._addon_first.setdefault((name, aid), now)
-                add(aid, level, a.get("text") or "", since, a.get("ips"), name, a.get("title"))
-            for key in [k for k in self._addon_first if k[0] == name and k[1] not in seen]:
-                del self._addon_first[key]
-
         # ---- events on raise / clear, paused alerts neither clear nor re-announce
         events = []
-        prev = {aid: a for aid, a in self._active.items()
-                if a["source"] == "dashboard" or a["source"] in from_addons}
-        for key in [k for k in self._addon_first if k[0] not in from_addons]:
-            del self._addon_first[key]       # an add-on turned off: its alerts go quietly
+        prev = dict(self._active)
         new_active = dict(found)
         for aid in paused:
             if aid in prev and aid not in found:

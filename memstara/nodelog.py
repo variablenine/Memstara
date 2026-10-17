@@ -1,8 +1,6 @@
-"""GET /api/node-log: the last lines of monerod's log, or of a log an add-on offers. Read-only.
+"""GET /api/node-log: the last lines of monerod's log. Read-only.
 
-`source=monerod` reads node.log_path; `source=<add-on>.<id>` reads the path in the setting
-that add-on's log_sources() names (see addons.py). Either way: at most the last 512 KB of a
-regular file, never written, never a symlink out of the user's home folder, and never
+It reads node.log_path: at most the last 512 KB of a regular file, never written, never a symlink out of the user's home folder, and never
 blocking on a pipe or device. A file inside the dashboard's own settings or state folder, or
 one whose name has no ".log", isn't read either, unless it is the log file host.discover
 found for the node (util.log_path_refusal).
@@ -101,32 +99,24 @@ def tail(configured: str, lines: int = DEFAULT_LINES, name: str = "the log", nod
             "lines": rows[-lines:] if lines else []}
 
 
-def read(settings, source: str, lines_text: str | None, extra: dict | None = None,
-         node_log: str | None = None, remote: bool = False) -> tuple[int, dict]:
-    """The API answer: (status, body). `extra` is addons.Addons.log_sources():
-    {"<add-on>.<id>": {"setting", "title", "enabled", "addon"}}. `node_log` is the log file
-    host.discover found for the node (Poller.node_log_file()), or None. `remote`: the node runs
-    on another computer (Poller.node_elsewhere()), so its log is read only from a path set by hand."""
-    extra = extra or {}
-    if source not in SOURCES and source not in extra:
-        names = ["monerod"] + sorted(extra)
-        return 400, {"ok": False, "error": "source must be " + " or ".join(names)}
-    if source in extra and not extra[source]["enabled"]:
-        return 404, {"ok": False, "error": "That log comes from the %s add-on, which is turned off."
-                     % extra[source]["addon"]}
+def read(settings, source: str, lines_text: str | None, node_log: str | None = None,
+         remote: bool = False) -> tuple[int, dict]:
+    """The API answer: (status, body). `node_log` is the log file host.discover found for the
+    node (Poller.node_log_file()), or None. `remote`: the node runs on another computer
+    (Poller.node_elsewhere()), so its log is read only from a path set by hand."""
+    if source not in SOURCES:
+        return 400, {"ok": False, "error": "source must be monerod"}
     n = DEFAULT_LINES
     if lines_text not in (None, ""):
         if not re.fullmatch(r"\d{1,4}", lines_text or "") or not 1 <= int(lines_text) <= MAX_LINES:
             return 400, {"ok": False, "error": "lines must be 1 to %d" % MAX_LINES}
         n = int(lines_text)
-    setting, name = ((SOURCES[source], NAMES[source]) if source in SOURCES
-                     else (extra[source]["setting"], extra[source]["title"]))
+    setting, name = SOURCES[source], NAMES[source]
     path = settings.get(setting)
-    if source == "monerod":
-        if remote and path == DEFAULTS["node.log_path"]:
-            return 404, {"ok": False, "error": "The node runs on another computer, so its log isn't on this one. "
-                         "To read it here, copy it over or mount its folder, and set monerod's log in Settings."}
-        path = node_log_path({"node.log_path": path}, node_log)
+    if remote and path == DEFAULTS["node.log_path"]:
+        return 404, {"ok": False, "error": "The node runs on another computer, so its log isn't on this one. "
+                     "To read it here, copy it over or mount its folder, and set monerod's log in Settings."}
+    path = node_log_path({"node.log_path": path}, node_log)
     try:
         out = tail(path, n, name, node_log)
     except LogError as e:

@@ -17,7 +17,7 @@ def healthy(**kw):
               "tor_active": True, "synced": True, "height": 3780042, "target_height": 3780042,
               "block_seen_age": 60, "free_bytes": 400 * 10 ** 9, "reorgs": [], "double_spends": 0,
               "restarts": [], "out16": {"net": "100.66", "n": 2, "ips": ["100.66.1.9", "100.66.4.2"]},
-              "in24": {"net": "100.70.3", "n": 1, "ips": ["100.70.3.4"]}, "addon_alerts": {}})
+              "in24": {"net": "100.70.3", "n": 1, "ips": ["100.70.3.4"]}})
     o.update(kw)
     return o
 
@@ -247,10 +247,6 @@ class SpreadTorTest(unittest.TestCase):
         self.assertEqual((ns["tx_proxy"], ns["tx_proxy_tor"]), (True, True))
 
 
-def chain(level="bad", **kw):
-    return dict({"id": "chain", "level": level, "text": "check failed", "title": "EXAMPLE CHECK"}, **kw)
-
-
 def pc(**kw):
     c = {"cpu_temp_c": 55.0, "on_ac": True, "battery_pct": 100, "mem_used_bytes": 4 * 10 ** 9,
          "mem_total_bytes": 16 * 10 ** 9}
@@ -312,87 +308,15 @@ class ComputerTest(unittest.TestCase):
         self.assertEqual(len(h.events), n, "no readings (local reads off): paused, not cleared")
 
 
-class OrderAndAddonTest(unittest.TestCase):
+class OrderTest(unittest.TestCase):
     def test_worst_first_then_oldest(self):
         h = Harness()
         h.run(healthy(double_spends=1))
-        _, alerts = h.run(healthy(double_spends=0, free_bytes=19 * 10 ** 9, addon_alerts={"demo": [chain()]}), 10)
-        self.assertEqual([a["id"] for a in alerts], ["chain", "double_spend", "disk"])
-        self.assertEqual(alerts[0]["source"], "demo")
-        self.assertEqual(alerts[0]["title"], "EXAMPLE CHECK")
+        _, alerts = h.run(healthy(double_spends=0, free_bytes=19 * 10 ** 9), 10)
+        self.assertEqual([a["id"] for a in alerts], ["double_spend", "disk"])
         for a in alerts:
             self.assertEqual(set(a), {"id", "level", "title", "text", "since", "source", "ips"})
-
-    def test_core_ids_win(self):
-        h = Harness()
-        a, _ = h.run(healthy(addon_alerts={"demo": [{"id": "disk", "level": "bad", "text": "Only 1 GB free"},
-                                                   {"id": "link_down", "level": "warn", "text": "x"}]}))
-        self.assertNotIn("disk", a)
-        self.assertEqual(a["link_down"]["source"], "demo")
-        self.assertEqual(a["link_down"]["title"], "LINK DOWN", "no title given: from the id")
-
-    def test_first_add_on_wins_an_id(self):
-        h = Harness()
-        a, _ = h.run(healthy(addon_alerts={"aaa": [chain("warn")], "bbb": [chain("bad", text="other")]}))
-        self.assertEqual((a["chain"]["source"], a["chain"]["level"]), ("aaa", "warn"))
-        a, _ = h.run(healthy(addon_alerts={"aaa": [chain("warn"), chain("bad")]}), 5)
-        self.assertEqual(a["chain"]["level"], "bad", "the worse of one add-on's duplicates")
-
-    def test_since_given_or_first_seen(self):
-        h = Harness()
-        t0 = int(h.clock())
-        a, _ = h.run(healthy(addon_alerts={"demo": [chain(), {"id": "x", "text": "y", "since": t0 - 300}]}))
-        self.assertEqual((a["chain"]["since"], a["x"]["since"], a["x"]["level"]), (t0, t0 - 300, "warn"))
-        a, _ = h.run(healthy(addon_alerts={"demo": [chain()]}), 60)
-        self.assertEqual(a["chain"]["since"], t0, "kept while it stays up")
-
-    def test_none_holds_everything_from_that_add_on(self):
-        h = Harness()
-        t0 = int(h.clock())
-        h.run(healthy(addon_alerts={"demo": [chain()], "other": [{"id": "x", "text": "y"}]}))
-        n = len(h.events)
-        a, _ = h.run(healthy(addon_alerts={"demo": None, "other": [{"id": "x", "text": "y"}]}), 5)
-        self.assertEqual(set(a), {"x"}, "held: not shown")
-        self.assertEqual(len(h.events), n, "and not cleared")
-        a, _ = h.run(healthy(addon_alerts={"demo": [chain()], "other": [{"id": "x", "text": "y"}]}), 5)
-        self.assertEqual(a["chain"]["since"], t0, "back as it was, no new event")
-        self.assertEqual(len(h.events), n)
-
-    def test_hold_one_alert_and_raise_another(self):
-        h = Harness()
-        a, _ = h.run(healthy(addon_alerts={"demo": [chain()]}))
-        n = len(h.events)
-        stale = {"id": "reading_stale", "level": "warn", "text": "The reading is 11 min old", "since": int(h.clock()) - 100}
-        a, _ = h.run(healthy(addon_alerts={"demo": [{"id": "chain", "hold": True}, stale]}), 5)
-        self.assertEqual(set(a), {"reading_stale"})
-        self.assertEqual([x["kind"] for x in h.events[n:]], ["alert"], "chain is held, not cleared")
-        a, _ = h.run(healthy(answering=False, addon_alerts={"demo": [{"id": "chain", "hold": True}, stale]}), 600)
-        self.assertIn("reading_stale", a, "add-on alerts go on while the node is down")
-        n = len(h.events)
-        a, _ = h.run(healthy(addon_alerts={"demo": [chain()]}), 5)
-        self.assertEqual(set(a), {"chain"})
-        self.assertEqual([x["text"] for x in h.events[n:]], ["Cleared: READING STALE"])
-        # holding an alert that isn't up does nothing
-        a, _ = h.run(healthy(addon_alerts={"demo": [{"id": "nope", "hold": True}]}), 5)
-        self.assertEqual(a, {})
-
-    def test_turned_off_add_on_goes_quietly(self):
-        h = Harness()
-        h.run(healthy(addon_alerts={"demo": [chain()]}))
-        n = len(h.events)
-        a, _ = h.run(healthy(addon_alerts={}), 5)
-        self.assertEqual(a, {})
-        self.assertEqual(len(h.events), n, "no Cleared event for an add-on that was turned off")
-        a, _ = h.run(healthy(addon_alerts={"demo": [chain()]}), 5)
-        self.assertEqual(a["chain"]["since"], int(h.clock()), "back on: a new alert")
-        self.assertEqual(h.events[-1]["kind"], "alert")
-
-    def test_empty_list_clears(self):
-        h = Harness()
-        h.run(healthy(addon_alerts={"demo": [chain()]}))
-        a, _ = h.run(healthy(addon_alerts={"demo": []}), 5)
-        self.assertEqual(a, {})
-        self.assertEqual(h.events[-1]["text"], "Cleared: EXAMPLE CHECK")
+            self.assertEqual(a["source"], "dashboard")
 
 
 if __name__ == "__main__":

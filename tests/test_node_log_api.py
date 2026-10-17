@@ -47,10 +47,9 @@ class TailTest(unittest.TestCase):
         self.env.stop()
         self.tmp.cleanup()
 
-    def read(self, source="monerod", lines=None, path="~/.bitmonero/bitmonero.log", extra=None, node_log=None,
-             remote=False, **values):
-        return nodelog.read(StubSettings(**dict({"node.log_path": path}, **values)), source, lines, extra, node_log,
-                            remote)
+    def read(self, source="monerod", lines=None, path="~/.bitmonero/bitmonero.log", node_log=None, remote=False,
+             **values):
+        return nodelog.read(StubSettings(**dict({"node.log_path": path}, **values)), source, lines, node_log, remote)
 
     def test_a_node_on_another_computer(self):
         self.log.write_text(log_line(1) + "\n")
@@ -89,29 +88,7 @@ class TailTest(unittest.TestCase):
         self.assertEqual(out["lines"][0], log_line(0))
         json.dumps(out)
 
-    def test_a_log_an_add_on_offers(self):
-        (self.home / "svc").mkdir()
-        (self.home / "svc" / "runner.log").write_text("starting monerod\nup\n")
-        extra = {"example.runner": {"setting": "example.runner_log", "title": "the runner's log", "enabled": True,
-                                    "addon": "Example"}}
-        st, out = self.read("example.runner", extra=extra, **{"example.runner_log": "~/svc/runner.log"})
-        self.assertEqual((st, out["lines"], out["source"]), (200, ["starting monerod", "up"], "example.runner"))
-        st, out = self.read("example.runner", extra=extra, **{"example.runner_log": "~/svc/gone.log"})
-        self.assertEqual((st, out["error"]), (404, "the runner's log isn't at %s." % (self.home / "svc" / "gone.log")))
-        # the same safety rules as monerod's log
-        secret = self.outside / "secret.txt"
-        secret.write_text("no\n")
-        (self.home / "svc" / "link.log").symlink_to(secret)
-        st, out = self.read("example.runner", extra=extra, **{"example.runner_log": "~/svc/link.log"})
-        self.assertEqual(st, 403)
-        # turned off: not read
-        extra["example.runner"]["enabled"] = False
-        st, out = self.read("example.runner", extra=extra, **{"example.runner_log": "~/svc/runner.log"})
-        self.assertEqual((st, out), (404, {"ok": False, "error": "That log comes from the Example add-on, which is "
-                                                                 "turned off."}))
-        # unknown sources name the ones there are
-        st, out = self.read("other", extra=extra)
-        self.assertEqual((st, out["error"]), (400, "source must be monerod or example.runner"))
+    def test_only_monerods_log(self):
         st, out = self.read("other")
         self.assertEqual((st, out["error"]), (400, "source must be monerod"))
 
@@ -218,11 +195,6 @@ class TailTest(unittest.TestCase):
             st, out = self.read(path=str(folder / "old.log"))
             self.assertEqual((st, out["error"]), (403, "%s is in the dashboard's own settings or state folder, so "
                                                        "it isn't read." % (folder / "old.log")))
-        # an add-on's log: the same rules
-        extra = {"example.runner": {"setting": "example.runner_log", "title": "the runner's log", "enabled": True,
-                                    "addon": "Example"}}
-        st, out = self.read("example.runner", extra=extra, **{"example.runner_log": "~/notes.txt"})
-        self.assertEqual(st, 403)
         # the log file the node was found writing (--log-file) is always read, whatever its name
         st, out = self.read(path="~/notes.txt", node_log=str(notes))
         self.assertEqual((st, out["lines"]), (200, ["not a log"]))
@@ -287,7 +259,7 @@ class HttpTest(unittest.TestCase):
                                                                                 % self.port))
         self.assertEqual((st, len(out["lines"])), (200, 20))
         st, out = get_json(self.port, "/api/node-log?source=start", headers={"X-Memstara": "1"})
-        self.assertEqual((st, out), (400, {"ok": False, "error": "source must be monerod"}), "no add-ons here")
+        self.assertEqual((st, out), (400, {"ok": False, "error": "source must be monerod"}), "monerod's log is the only one")
         st, _ = get_json(self.port, "/api/node-log?lines=5000", headers={"X-Memstara": "1"})
         self.assertEqual(st, 400)
         st, _, _ = request(self.port, "POST", "/api/node-log", {}, headers=WRITE)

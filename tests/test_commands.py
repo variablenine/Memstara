@@ -124,16 +124,6 @@ class RegistryTest(unittest.TestCase):
         self.assertTrue(seconds["help"].endswith("Bans last until they run out or the node restarts; bans from "
                                                  "--ban-list and the DNS blocklist come back when it starts."))
 
-    def test_add_on_notes_go_after_the_warning(self):
-        notes = {"stop_daemon": "Note one.", "exit": "Note two.", "save": "Saved too.", "nope": "Dropped."}
-        cmds = C.Commands(make_settings("http://127.0.0.1:1"), notes=lambda: notes)
-        by = {c["name"]: c for c in cmds.listing()["commands"]}
-        self.assertEqual(by["stop_daemon"]["warn"], "Stops the node. If a service or script restarts it "
-                                                    "automatically, it comes back on its own. Note one. Note two.")
-        self.assertEqual(by["save"]["warn"], "Saved too.", "a command with no warning of its own")
-        self.assertIsNone(by["print_height"]["warn"])
-        self.assertNotIn("Dropped.", json.dumps(by))
-
     def test_parse_range(self):
         ok = {"77.88.100.7": "77.88.100.7", "77.88.100.x": "77.88.100.0/24", "77.88.x.x": "77.88.0.0/16",
               "77.88.100.*": "77.88.100.0/24", " 77.88.100.77/24 ": "77.88.100.0/24",

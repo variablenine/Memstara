@@ -203,7 +203,6 @@ ol, ul { list-style: none; }
 .alert-text { color: var(--ink-2); }
 .alert-ips { color: var(--ink-3); font-size: var(--fs-1); display: block; margin-top: 2px; overflow-wrap: anywhere; }
 .alert-since { color: var(--ink-3); font-size: var(--fs-1); white-space: nowrap; }
-.alert-src { color: var(--ink-4); }
 
 /* ---- grid ---- */
 .grid {

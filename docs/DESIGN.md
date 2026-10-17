@@ -14,11 +14,9 @@ and the tests (`tests/`). If code and this file disagree, fix one of them.
   through its public JSON-RPC interface, plus read-only looks at the machine
   it runs on (see **Local reads**). Updating Monero never needs a dashboard
   change unless Monero changes its RPC.
-- **A generic core, with anything setup-specific in removable add-ons.** The
-  core works with any `monerod` on Linux and assumes nothing about the user's
-  own scripts. Things that only make sense on one person's machine live in
-  `addons/<name>/`, and deleting that folder removes them completely. See
-  **Core and add-ons**.
+- **Generic.** It works with any `monerod` on Linux and assumes nothing about
+  the user's own scripts, services or network. It loads no code from outside
+  `memstara/` and `web/`.
 - **A GUI for monerod's own commands, nothing more.** Every command you can
   type into `monerod`'s console (or run as `monerod <command>`) is available,
   reading and changing exactly what that command reads and changes. Monero's
@@ -41,116 +39,6 @@ and the tests (`tests/`). If code and this file disagree, fix one of them.
   modules with no build step, no framework, and no requests to any other host
   (fonts are bundled).
 
-## Core and add-ons
-
-The core is everything in `memstara/`, `web/`, `docs/` and `tests/`. It must
-work, and its tests must pass, with the `addons/` folder deleted. No core file
-names an add-on, reads an add-on's settings, or has wording about one
-person's setup (no particular machine, script, service or VPN, and no fixed
-ports other than monerod's own defaults).
-
-An add-on is one folder, `addons/<name>/`:
-
-```
-addons/<name>/
-  addon.py        server side: defines ADDON (see below)
-  web/            screens: ES modules and CSS, served at /addons/<name>/web/...
-  tests/          its own tests (unittest), run with the core's
-  README.md       what it reads, how to set it up, how to remove it
-```
-
-Removing it: delete the folder and restart the dashboard. Its settings stay
-in the settings file untouched (ignored) until the next save drops them.
-
-Its tests are its `tests/test*.py` files. The core's
-`tests/test_addons_suite.py` imports each one by path (as module
-`addontests_<name>_<file>`, with the add-on's `tests/` folder on `sys.path`),
-so `python3 -m unittest discover -s tests` runs the core's and every
-add-on's tests together. A helper module in an add-on's `tests/` needs a name
-no other add-on uses (for example `_<name>_paths.py`). With `addons/`
-deleted that file adds nothing.
-
-### Server side (`addon.py`)
-
-`memstara/addons.py` loads every `addons/*/addon.py` at start with
-`importlib` (path from the repo root, or `--addons DIR`; `--no-addons` loads
-none). Each file defines `ADDON`, an instance of a subclass of
-`memstara.addons.Addon`. Every hook is optional and has a do-nothing default.
-Any exception from an add-on, at load or in a hook, is caught, logged once
-per minute at most, and shown in `/api/addons` as `error`; the core keeps
-running and the add-on's parts show as off. `poll()` runs in a worker thread
-and is waited for 4 s at most (`POLL_TIMEOUT_S`): one still running then
-counts as a failed `poll()` for that poll ("poll() didn't finish in 4 s"),
-its answer is never used, and no new `poll()` of that add-on starts until it
-ends ("poll() still hasn't finished an earlier call ..."). Meanwhile its
-`command_notes` and `protected_hosts` may be called while that `poll()` still
-runs.
-
-| hook | returns | used for |
-|---|---|---|
-| `name`, `title`, `intro` | str | id (`[a-z][a-z0-9_]*`, the folder's name; left empty it takes the folder's), display name, one or two sentences for its settings section. Names the core uses (its settings sections, `addons`, `api`, `core`, `dashboard`, `web`, `memstara`) are refused |
-| `settings()` | list of schema entries (`memstara.settings.entry(...)`), keys `<name>.<key>`, section `<name>` | the add-on's section in the settings menu; `<name>.enabled` (bool, default true, "Use this add-on") is added by the core first. Each entry is checked at load (key pattern, type, a valid default) |
-| `poll(settings, now, ctx)` | dict (JSON-safe) | `snapshot.addons.<name>`; called every poll. `settings` is every setting's value, flat (a copy), with every password-type setting blanked (`""`) except the add-on's own `<name>.*` ones, so `source.rpc_password` never reaches an add-on; `ctx` is a copy of the core snapshot so far (node, chain, peers, mempool, traffic, host, ...) |
-| `lamps(data, ctx)` | list of `{id, label, state, value, help, screen?}` | appended to the lamp wall after the core lamps; ids are prefixed `<name>.` by the core; `label` ≤ 24 and `value` ≤ 16 characters, uppercased; `screen` (`status`, `network`, `chain` or `mempool`) is the screen a click on it opens, else one is guessed from its id and label. `ctx` also has the merged `alerts` |
-| `alerts(data, ctx)` | list of `{id, level, text, title?, since?, ips?}`, or `None` | merged into `snapshot.alerts` with `source: <name>` (see Alerts). `None` = can't tell right now: its alerts stay as they are; an item `{id, hold: true}` does the same for one alert |
-| `route(data, ctx)` | list of `{id, label, value, level, between?, link?: {label, level}, detail?, row_only?}` | `snapshot.route` (each item also gets `addon`): extra boxes in the route diagram. `between: "peers-node"` puts the box on the link from other nodes to the node (something the node's traffic passes through) and `link` labels the link below it; other boxes hang below the node (at most 2 drawn); `row_only` items only add a line under the diagram; `detail` is that line's text when it differs from `value` |
-| `command_notes(data)` | `{command: text}` | appended to that command's `warn` in `/api/commands` and in its confirm text (an alias such as `exit` counts as its command) |
-| `protected_hosts(data)` | list of IP strings | `ban` refuses any range holding one of these (an IPv4-mapped IPv6 address counts as its IPv4 address). When it fails, the addresses it gave last time stay protected (until the add-on is turned off) |
-| `log_sources()` | list of `{id, title, setting, summary?}` | extra log views in the command drawer; `GET /api/node-log?source=<name>.<id>` reads the path in that setting, which must be one of the add-on's own `path` settings (same rules as the core log) |
-| `web()` | `{"scripts": [...], "styles": [...]}` | files under its `web/` the screens load (`.js`/`.mjs` scripts, `.css` styles) |
-
-`log_sources()` and `web()` are called once, at load. `data` is what the
-add-on's `poll()` returned last. When `poll()` failed it is `None`, and then
-only `command_notes` and `protected_hosts` are called (with `None`), its lamps
-show `off` with value `ADD-ON ERROR` under the names they had, and its
-alerts are held. Everything a hook returns is checked and trimmed before it
-reaches the snapshot (at most 40 lamps, alerts or route items per add-on per
-poll). A turned-off add-on (`<name>.enabled` false) isn't called at all: its
-lamps, route items, notes, protected hosts and `snapshot.addons.<name>` go
-away, and its alerts are dropped without "Cleared" events.
-
-`GET /api/addons` → `{"addons": [{name, title, intro, enabled, error, scripts: [url], styles: [url], logs: [{source, title, summary}]}]}`
-(`intro`: one or two plain sentences for its settings section; `logs[].source`
-is `<name>.<id>` as `/api/node-log` takes it). Every folder with an
-`addon.py` is listed, in name order, including one that didn't load
-(`enabled: false`, `error: "It didn't load: ..."`, nothing else). `error` is
-otherwise the latest hook failure (`"poll() failed: ValueError: ..."`) while
-it keeps failing, else `null`. Script and style URLs are
-`/addons/<name>/web/<file>`. Not guarded: it only lists what's loaded.
-Static files for an add-on are added to the server's allowlist at start, from
-its `web()` list only. Folders starting with `.` or `_` are skipped.
-
-### Screens side
-
-After loading settings, `main.js` fetches `/api/addons` and `import()`s each
-enabled add-on's scripts (same origin, so the CSP still holds) and adds its
-styles. A script's default export is `register(dash)`, where `dash` offers:
-
-- `dash.addPanel({id, letter, title, span, tab, after, build})`: the core
-  makes the `<section class="panel">` frame (header, pid letter, title,
-  subtitle slot, an ADD-ON tag) on screen `tab` (`status`, `network`,
-  `chain`, `mempool`, `traffic`, `computer`, `controls` or `log`; STATUS if
-  unknown), after panel `after` when that panel is there, and calls
-  `build(body, sub)` once. The letter is used unless a panel already shows
-  it, else the panel gets "+". The panel shows while the add-on is on
-  (`<name>.enabled`); `build` returns `{render(snap, now)}`, called on
-  every snapshot with `snap.addons[<name>]` available.
-- `dash.helpers`: the core's `dom.js` and `fmt.js` exports, so an add-on
-  writes text the same safe way (textContent only) and formats numbers the
-  same way.
-
-Lamps, alerts, route boxes, log views and command notes come from the
-server, so they need no add-on script.
-
-### What's core
-
-| part | where |
-|---|---|
-| RPC panels, lamps 1 to 11, alerts from RPC, history, commands, controls | core |
-| Local reads (process, log, computer, network link, Tor proxy, round trips) | core |
-| Finding the node: the running `monerod`'s own flags and config file give the unrestricted RPC address, data dir, log file and `--out-peers` | core |
-| Anything that only makes sense with files or services only one setup has | an add-on in `addons/<name>/`, described in its own `README.md` |
-
 ## Process model
 
 `python3 -m memstara` (from the repo folder, or the app's icon) checks that
@@ -163,21 +51,18 @@ shows that copy's window and exits. Otherwise this copy:
    defaults on first run (file mode 0600, folder 0700). Every save sets a
    folder that was already there to 0700 too, when it's the user's own and
    not the home folder, a filesystem root or a sticky folder like `/tmp`.
-2. Loads the add-ons (`addons/` next to `memstara/`, see **Core and add-ons**)
-   and adds their settings. Once the server is up it prints one line per
-   add-on: on, turned off, or why it didn't load.
-3. On a first run (the settings file had no `source.rpc_url`), looks for the
+2. On a first run (the settings file had no `source.rpc_url`), looks for the
    running `monerod` (see **Finding the node**) and saves its address and log
    file when exactly one is usable.
-4. Starts one **poller** thread that reads the node every
+3. Starts one **poller** thread that reads the node every
    `source.refresh_s` seconds (and this computer every `local.every_s`; both
-   every second by default), runs the alert rules, calls the add-ons, records
+   every second by default), runs the alert rules, records
    history and events, and stores the latest snapshot. The window only ever
    reads that stored snapshot, so it never adds load on the node, and it gets
    each new one the moment the poll that made it ends (see **The snapshot**).
-5. Serves the screens and the API on `127.0.0.1:<server.port>` (default
+4. Serves the screens and the API on `127.0.0.1:<server.port>` (default
    18200), with a new window key (see **HTTP API and safety rules**).
-6. Opens the window (not with `--background`).
+5. Opens the window (not with `--background`).
 
 Closing the window stops the app (it saves the history first, without waiting
 more than 2 seconds for a reading still under way, since at logout the desktop
@@ -193,8 +78,7 @@ when drawing in software (heap errors in its exit-time cleanup).
 Command-line flags: `--background` (no window; start at login uses it),
 `--install` / `--uninstall` (the app's entry in the app grid), `--autostart
 on|off` (start at login), `--safe-graphics` (draw without the graphics card),
-`--port N`, `--config PATH`, `--addons DIR` (load add-ons from another folder)
-or `--no-addons` (load none). `--install`, `--uninstall` and `--autostart`
+`--port N` and `--config PATH`. `--install`, `--uninstall` and `--autostart`
 do their job and exit. Hidden: `--debug` (the screens' console messages in the
 terminal, and WebKit's inspector on right-click).
 
@@ -209,8 +93,7 @@ The view loads `http://127.0.0.1:<port>/?key=<window key>` and nothing else.
 - **One copy.** A second start finds the first over D-Bus (in
   `handle-local-options`, before anything starts) and shows its window instead
   (with `--background` it just exits). Options that only count at start
-  (`--port`, `--config`, `--safe-graphics`, `--addons`, `--no-addons`,
-  `--debug`) don't reach the running copy, and the second start says so. If
+  (`--port`, `--config`, `--safe-graphics`, `--debug`) don't reach the running copy, and the second start says so. If
   the running copy doesn't answer (it's busy starting or stopping), the second
   start says so and exits with status 1, rather than becoming a second copy.
   With no session bus it runs on its own.
@@ -470,19 +353,11 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
   "alerts": [                          // active alerts, worst first, then oldest first
     {"id": "peers", "level": "warn", "title": "FEW OUTGOING",
      "text": "Only 6 of 32 outgoing connections for 12 min",
-     "since": 1759699000, "source": "dashboard", "ips": null}   // source: "dashboard" or an add-on's name
+     "since": 1759699000, "source": "dashboard", "ips": null}
   ],
-  "lamps": [                           // the annunciator wall: the 12 core lamps in this order, then add-on lamps
-    {"id": "node", "label": "NODE", "state": "ok", "value": "ANSWERING", "since": null},
-    {"id": "example.thing", "label": "THING", "state": "warn", "value": "2 ALERTS", "since": 1759699000,
-     "addon": "example", "help": "What it watches."}
-  ],                                   // since = when it last left ok/off, null while ok/off;
-                                       // add-on lamps also carry "addon": "<name>" and "help": "<what it watches>"
-  "addons": {"<name>": { }},           // each enabled add-on's poll() result ({} with no add-ons)
-  "route": [                           // add-on route items (see Core and add-ons); [] with no add-ons
-    {"id": "relay", "label": "RELAY", "value": "UP", "level": "ok", "between": "peers-node",
-     "link": {"label": "CHECKED · OK", "level": "ok"}, "addon": "example"}
-  ],
+  "lamps": [                           // the annunciator wall: the 12 lamps in this order
+    {"id": "node", "label": "NODE", "state": "ok", "value": "ANSWERING", "since": null}
+  ],                                   // since = when it last left ok/off, null while ok/off
   "host": { },                         // local reads, see "Local reads"; null when off
   "events": [                          // newest first, at most 200
     {"t": 1759699900, "level": "info", "kind": "block", "text": "New block 3,512,344 · 41 txs · 98 kB",
@@ -496,8 +371,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
 ### Lamps (annunciator wall)
 
 `state` is one of `ok`, `warn`, `bad`, `off` (not set up / not known). Always
-these 12, in this order, then each enabled add-on's lamps (ids
-`<name>.<id>`, in add-on name order; see **Core and add-ons**). `value` is a
+these 12, in this order. `value` is a
 short plain-language reading (at most about 14 characters, uppercase).
 
 | id | label | lit when | source |
@@ -515,27 +389,9 @@ short plain-language reading (at most about 14 characters, uppercase).
 | `tor` | TOR SENDING | Tor sending on but 0 Tor peers for 10 min | RPC, node flags |
 | `flood` | BLACK MARBLE | a new 16-member ring works like under 11 / 8 members for 30 min | RPC |
 
-An add-on lamp's `since` is tracked the same way; when an add-on is turned
-off its lamps go and their `since` starts afresh if it comes back.
-
 ### Alerts
 
-The dashboard computes the ids below itself (`source: "dashboard"`). Add-ons
-add their own (`source: "<name>"`, see **Core and add-ons**), merged like this:
-
-- An add-on alert is shown as given: `level` (warn or bad), `text`, `title`
-  (default: its id in capitals, `_` as spaces), `ips`, and `since` (default:
-  when the dashboard first saw it).
-- An add-on alert with the id of a core alert is ignored (the core's own
-  reading wins). If two add-ons raise the same id, the one that raised it
-  first keeps it.
-- An add-on whose `alerts()` answers `None` (or whose `poll()` failed) can't
-  tell right now. Its alerts stay as they were: they aren't shown and aren't
-  cleared, and they come back without a second "raised" event. An item
-  `{id, hold: true}` does the same for one alert.
-- An alert missing from an add-on's next answer is cleared, with an event.
-- Turning an add-on off, or deleting it, drops its alerts quietly, without
-  "Cleared" events.
+The dashboard computes every alert itself (`source: "dashboard"`).
 
 Rules (thresholds are settings):
 
@@ -757,8 +613,8 @@ section's defaults.
 The file carries `"format": 2`. A file without it is from before reads every
 second: when it loads, `source.refresh_s` 5 and `local.every_s` 10 (the old
 defaults) become 1, once, and the file is saved with `"format": 2`. Any other
-value someone picked stays, and everything else in the file, add-ons' sections
-included, is written back as it was.
+value someone picked stays, and everything else in the file is written back as
+it was (keys nobody knows are dropped at the next save).
 
 Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 "label": "Few outgoing below", "help": "...", "type":
@@ -810,12 +666,10 @@ Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 | `node.log_path` | path | `~/.bitmonero/bitmonero.log` | monerod's own log; on first run, from FIND MY NODE. Left at the default, the log file the running node was found writing (its `--log-file` or data dir) is read instead |
 | `local.enabled` | bool | true | computer reads (see Local reads) |
 | `local.every_s` | choice 1/5/10/30 | 1 | |
-| `<addon>.enabled` | bool | true | added by the core for each add-on; each add-on's own keys are `<addon>.*` |
 | `server.port` | int 1024-65535 | 18200 | the window's local port; takes effect the next time the app starts |
 
 Panel ids (core): `lamps`, `chain`, `peers`, `route`, `controls`, `traffic`,
-`history`, `mempool`, `events`, `computer`, `system`, `flood`. Add-on panels are shown
-or hidden with their add-on's `<addon>.enabled`.
+`history`, `mempool`, `events`, `computer`, `system`, `flood`.
 
 ## HTTP API and safety rules
 
@@ -830,10 +684,8 @@ or hidden with their add-on's `<addon>.enabled`.
 | `POST /api/test-connection` | `{"rpc_url", "rpc_user", "rpc_password"?}` → tries `get_info` once and answers `{ok, version, height, restricted, latency_ms, error}`; a missing password means "use the saved one", but only when `rpc_url` has the same scheme, host and port as the saved `source.rpc_url` (127.0.0.1, ::1 and localhost count as the same host); any other address is tried with no password |
 | `GET /api/commands` | the command list, see Commands |
 | `POST /api/command` | runs one command, see Commands |
-| `GET /api/node-log` | the last lines of monerod's log or of a log an add-on offers (guarded) |
+| `GET /api/node-log` | the last lines of monerod's log (guarded) |
 | `GET /api/discover` | the running `monerod`s and their settings, see Finding the node (guarded) |
-| `GET /api/addons` | the add-ons, see Core and add-ons |
-| `GET /addons/<name>/web/<file>` | an add-on's screen files, only those its `web()` lists |
 | `GET /api/health` | `{"ok": true, "version": "<dashboard version>"}` |
 | `POST /api/privacy` | `{"on": true}` turns privacy mode on at once; `{"on": false, "confirm": "SHOW"}` turns it off (without the word: `400` with `field: "confirm"`). See Privacy mode |
 
@@ -864,7 +716,7 @@ Safety rules the server enforces:
   must match the Host (a `Sec-Fetch-Site: cross-site` is refused too);
   otherwise `403`. No CORS headers are ever sent.
 - Static files are served only from a list built at start-up by walking `web/`
-  plus each loaded add-on's `web()` files (no path joins from the URL), with
+  (no path joins from the URL), with
   correct `Content-Type`.
 - Headers on every answer: `Content-Security-Policy: default-src 'self';
   img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src
@@ -894,21 +746,19 @@ block, but no token can be turned back into its value. Hidden:
 |---|---|
 | `ip`, `ip6` | IPv4 and IPv6 addresses (not loopback or 0.0.0.0), and monerod's number form of one |
 | `n16`, `n24`, `net` | ranges, keeping their shape: `⟦n16⟧.0.0/16`, `⟦n24⟧.0/24`, `⟦n24⟧.x`, `⟦ip⟧/32` |
-| `port` | every port key, "port 47213" in text, a port after a hidden address (`⟦ip⟧:⟦port⟧`), and this node's own ports anywhere once learned (monerod's `--p2p-bind-port` flags, the add-ons' readings) |
+| `port` | every port key, "port 47213" in text, a port after a hidden address (`⟦ip⟧:⟦port⟧`), and this node's own ports anywhere once learned (monerod's `--p2p-bind-port` flags) |
 | `tor`, `i2p` | onion and I2P addresses |
 | `host`, `user`, `name` | this computer's name, your user name and your real name, as whole words |
 | `login` | the login in an address (`http://me:pw@…`) |
-| `srv` | server names an add-on reports under a `server` key, and anywhere else they turn up once learned |
 | `hex`, `tx` | any run of 64 or more hex digits (transaction ids, key images, a whole transaction in a log line), except block hashes under their own keys |
 | `id` | peer ids |
 | `addr` | Monero addresses |
 | `mac` | hardware addresses |
 
 Your home folder becomes `~`. Every string goes through the patterns, so a field added
-later (or an add-on's) still has its addresses, names and paths caught; the key rules
+later still has its addresses, names and paths caught; the key rules
 cover what a pattern can't recognise alone (a bare port number, a range written "1.2").
-An add-on that reports a private value should use the usual key names (`port`,
-`server`, `host_name`, `peer_id`, ...). A waiting transaction your node hasn't passed on
+A waiting transaction your node hasn't passed on
 yet is left out of the mempool list (only your node has it, so it could be yours), and
 the count of those is dropped. The snapshot gets `"privacy": true`.
 
@@ -917,8 +767,8 @@ clocks (the top bar says UTC, in the narrow layout too), the times the server wr
 (`clock_style` gets `-utc`; the snapshot says which it was written with in
 `clock_style`), events written before the switch (their local times are turned into UTC
 by their own `t`), the first snapshot after the switch, and local times in a log line
-("2025-06-01 09:30:00" in an add-on's log; monerod's own lines are UTC already and carry
-fractions of a second).
+("2025-06-01 09:30:00" in a line another program wrote; monerod's own lines are UTC
+already and carry fractions of a second).
 
 **Locked while it's on:** settings that hold an address, a folder or a login (types
 `text`, `url`, `path`, `password`) show their hidden form, read-only, and their sections
@@ -961,8 +811,7 @@ console command uses). Nothing else can be sent.
 "summary", "kind": "read"|"change", "confirm": "BAN"|null, "warn": "..."|null,
 "calls": ["set_bans"], "params": [{"name", "label", "type":
 "int"|"text"|"choice"|"bool"|"lines", "required", "min", "max", "choices",
-"placeholder", "help"}]}]}`. Metadata only. Notes from enabled add-ons'
-`command_notes()` are appended to `warn` (see Core and add-ons).
+"placeholder", "help"}]}]}`. Metadata only.
 
 `POST /api/command` `{"name", "args": {...}, "confirm"?}` → `200 {"ok": true,
 "name", "calls": [...], "result": {"<rpc method>": <its result object>, ...},
@@ -1039,10 +888,9 @@ suggestions.
 
 ### monerod's log (read-only)
 
-`GET /api/node-log?source=monerod|<addon>.<id>&lines=N` (N ≤ 1,000, default
+`GET /api/node-log?source=monerod&lines=N` (N ≤ 1,000, default
 200; `source` defaults to `monerod`) returns the last lines of
-`node.log_path` (default `~/.bitmonero/bitmonero.log`), or of the path in the
-setting an add-on's log source names, read from the last 512 KB of the file:
+`node.log_path` (default `~/.bitmonero/bitmonero.log`), read from the last 512 KB of the file:
 `{"ok", "path", "size", "mtime", "lines": [...], "source"}`. Never writes,
 never follows symlinks out of the user's home, refuses anything but a regular
 file (`403`), and never blocks on a pipe. It also refuses (`403`) a file
@@ -1051,11 +899,10 @@ inside the dashboard's own settings or state folder
 their `$XDG_*` places) and one whose name (after following links) has no
 `.log`, unless it is the `log_file` **Finding the node** found for the node
 the dashboard reads ("X isn't a log file (its name has no .log), so it isn't
-read."). monerod's log as events (`logevents.py`) follows the same rules. An
-unknown source is `400`
-("source must be monerod or ..."), a missing file `404` ("monerod's log isn't
-at PATH."), and a source whose add-on is turned off `404` ("That log comes
-from the T add-on, which is turned off.").
+read."). monerod's log as events (`logevents.py`) follows the same rules. Any
+other source is `400`
+("source must be monerod"), and a missing file `404` ("monerod's log isn't
+at PATH.").
 
 ## Local reads: what RPC can't show
 
@@ -1289,7 +1136,7 @@ a responsive grid (three columns wide, two below 1400 px, one when narrow).
 
 | Tab | Centrepiece | Panels after it |
 |---|---|---|
-| 01 STATUS | NODE STATUS: a ring with one segment per lamp (lit ▲ / ■ when not ok; click one to open the screen that explains it), arcs for outgoing peers, sync and disk, the height and the time since the last block in the middle, and quick readouts that open their screens | A lamp wall, add-on panels |
+| 01 STATUS | NODE STATUS: a ring with one segment per lamp (lit ▲ / ■ when not ok; click one to open the screen that explains it), arcs for outgoing peers, sync and disk, the height and the time since the last block in the middle, and quick readouts that open their screens | A lamp wall |
 | 02 NETWORK | NODE TREE: a 3D tree you can turn and zoom. Your node at the top, then outgoing / incoming / Tor, then peers on one company's servers grouped, then every peer. Dots running along the branches are the bytes each peer really moved since the last reading; busy peers are lit, quiet ones dim. LIVE CHATTER beside it is a log of peers joining and leaving, blocks, bans, the busiest peers and the pool, newest at the bottom | C peer scope, D route |
 | 03 CHAIN | BLOCK STREAM: the last blocks as 3D boxes receding into the distance, sized by weight and spaced by the wait before each, with a ghost NEXT BLOCK and its timer; blocks replaced flash ▲ | B chain, K system, L black marble watch |
 | 04 MEMPOOL | TRANSACTION POOL: one dot per waiting transaction in bands by how long it has waited; dots drop in as they arrive and leave in a block-shaped sweep | H mempool |
@@ -1318,12 +1165,11 @@ The older panels, by letter:
   name and node name, overall status lamp (OK / HEADS-UP / PROBLEM), LIVE
   badge with the RPC address, local clock, COMMANDS and SETTINGS buttons.
   **Alerts strip** below it: active alerts, problems first. **Status bar** at
-  the bottom: RPC address, answer time, poll, add-ons.
-- **A · Lamp wall** (`lamps`): the 12 core lamps, then add-on lamps. Lit in
+  the bottom: RPC address, answer time, poll.
+- **A · Lamp wall** (`lamps`): the 12 lamps. Lit in
   the heads-up or problem colour with ▲ / ■ when not ok. New problem lamps
   flash until clicked (acknowledging is only a screen state and changes
-  nothing on the node). Each lamp's tooltip says what it watches (add-on lamps
-  bring that text as `help`).
+  nothing on the node). Each lamp's tooltip says what it watches.
 - **B · Chain** (`chain`, two wide): height, synced %, time since the last
   block with a ring that fills toward 2 minutes, "chance of a wait this long"
   in plain words; the block tape: the last N blocks as bars (height = weight,
@@ -1339,8 +1185,7 @@ The older panels, by letter:
   dimmed, for 3 s (as the node tree does). The table is filled only while open.
 - **D · Route** (`route`): other nodes → the network link the node's p2p port
   is bound to, if any (from `host.bind_if`, titled VPN when it's a tun/WireGuard
-  interface) → your node → Tor and the dashboard. An add-on route item with
-  `between: "peers-node"` takes the middle spot; others hang below the node.
+  interface) → your node → Tor and the dashboard.
 - **E · Controls** (`controls`): ban a range (the ranges flagged right now as
   one-click suggestions) and the short bans (24 h or less left) with UNBAN,
   plus a button to the command drawer.
@@ -1372,13 +1217,10 @@ The older panels, by letter:
   being read it shows how far along it is; otherwise why there's no reading.
 - **Command drawer**: every monerod console command, grouped, searchable,
   each with a form for its arguments and its answer drawn as tables; plus log
-  views (monerod's, and any an add-on offers). Change commands open a confirm
+  view (monerod's). Change commands open a confirm
   dialog that needs a typed word and shows the arguments being sent.
-- **Add-on panels**: placed on the screen their `tab` names (STATUS if none),
-  framed by the core with an ADD-ON tag in the header (see Core and add-ons).
 
 The settings menu slides in from the right and is generated from the settings
-schema, with TEST CONNECTION and FIND MY NODE in the data source section and
-one section per add-on.
+schema, with TEST CONNECTION and FIND MY NODE in the data source section.
 
 Visual rules: see `docs/STYLE.md`.

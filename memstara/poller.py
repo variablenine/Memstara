@@ -3,8 +3,8 @@ and events, and keeps the latest snapshot. The app window only ever reads that s
 
 Each poll: RPC (every source.refresh_s), local reads of this computer and monerod's log
 (every local.every_s, see host.py and logevents.py), finding the node's own settings
-(host.discover, at most once a minute or when its pid changes), then each enabled
-add-on's hooks (addons.py), the alert rules, the lamps and history. The black marble
+(host.discover, at most once a minute or when its pid changes), then the alert rules, the
+lamps and history. The black marble
 watch (flood.py) reads a year of output counts once, a part per poll, then only the
 newest blocks.
 
@@ -29,7 +29,6 @@ from collections import deque
 from pathlib import Path
 
 from . import VERSION, adapter, host as host_mod
-from .addons import Addons
 from .alerts import AlertEngine, cfg_from_settings, empty_obs, tor_sending_active
 from .flood import FloodWatch
 from .history import History
@@ -104,12 +103,11 @@ def test_connection(url: str, user: str, password: str, timeout: float) -> dict:
 
 class Poller:
     def __init__(self, settings, *, clock=time.time, state_dir: Path | None = None, log=None,
-                 addons: Addons | None = None, host_reader=None, discover=None, node_log=None):
+                 host_reader=None, discover=None, node_log=None):
         self.settings = settings
         self.clock = clock
         self.state_dir = Path(state_dir) if state_dir else None
         self.log = log or (lambda msg: print(msg, file=sys.stderr))
-        self.addons = addons if addons is not None else Addons()
         # local reads; tests pass stand-ins for these three
         self.host_reader = host_reader or HostReader(settings.get("source.rpc_url"), DEFAULT_DATA_DIR,
                                                      every_s=settings.get("local.every_s"))
@@ -198,8 +196,7 @@ class Poller:
 
     def protected_addresses(self):
         """Addresses `ban` must never cover, as (ip, where from): the node's own --p2p-bind-ip
-        addresses ("node") and those enabled add-ons protect (the add-on's title). None until
-        the first poll has filled it in."""
+        addresses ("node"). None until the first poll has filled it in."""
         return None if self._protected is None else list(self._protected)
 
     def own_address_known(self) -> bool:
@@ -818,11 +815,6 @@ class Poller:
             "dashboard_version": VERSION, "bootstrap": parts["bootstrap"] if answering else None,
         }
 
-        # ---- add-ons: each sees the core snapshot so far
-        ctx = {"v": 1, "generated": int(now), "source": source, "node": node, "chain": chain, "peers": peers,
-               "mempool": parts["mempool"], "traffic": parts["traffic"], "host": host}
-        addon_data = self.addons.poll(vals, now, ctx)
-
         # ---- alerts
         out_peers = node.get("out_peers") if answering and not restricted else None
         total_out = None
@@ -843,7 +835,6 @@ class Poller:
             "out16": spread["out16"] if spread else None, "in24": spread["in24"] if spread else None,
             "flood": chain["flood"] if answering else None,
             "computer": host.get("computer") if host and host.get("ok") is not False else None,
-            "addon_alerts": self.addons.alerts(vals, ctx),
         })
         cfg = cfg_from_settings(vals)
         cfg["out_wanted"] = node["out_wanted"]
@@ -852,20 +843,18 @@ class Poller:
             self._push_event(e)
         level = "bad" if any(a["level"] == "bad" for a in alerts) else "warn" if alerts else "ok"
 
-        # ---- lamps: the core's, then the add-ons'
+        # ---- lamps
         rows = compute_lamps({
             "answering": answering, "restricted": restricted, "node": node, "chain": chain, "peers": peers,
             "alerts": {a["id"]: a for a in alerts if a["source"] == "dashboard"}, "tor_active": tor_active,
             "block_seen_age": obs["block_seen_age"], "clock": clock_style(vals),
             "restarts_1h": sum(1 for t in self.restarts if now - t < 3600), "now": now,
         })
-        ctx["alerts"] = alerts
-        lamps = self.lamps.build(rows, now, self.addons.lamps(vals, ctx))
-        route = self.addons.route(vals, ctx)
+        lamps = self.lamps.build(rows, now)
 
         # ---- addresses `ban` must never cover
         own = [(ip, "node") for ip in (found or {}).get("p2p_bind") or []]
-        self._protected = own + self.addons.protected(vals)
+        self._protected = own
         self._own_known = found is not None
 
         # ---- history
@@ -894,8 +883,6 @@ class Poller:
             "traffic": parts["traffic"],
             "alerts": alerts,
             "lamps": lamps,
-            "addons": addon_data,
-            "route": route,
             "host": host,
             "events": list(self.events),
             # the history row still filling, this reading included: a chart's newest point
@@ -922,8 +909,6 @@ class Poller:
             "traffic": {"bytes_in": None, "bytes_out": None, "rate_in": None, "rate_out": None},
             "alerts": [],
             "lamps": LampTracker().build(rows, self.clock()),
-            "addons": {},
-            "route": [],
             "host": None,
             "events": [],
             "hist": None,

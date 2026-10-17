@@ -27,7 +27,7 @@
 .ph h2 { font-family: var(--font-label); font-weight: 600; font-size: var(--fs-2); letter-spacing: .18em; color: var(--head); }
 .psub { color: var(--ink-3); font-size: var(--fs-0); flex: 1; min-width: 120px; }
 .psub[data-level="warn"] { color: var(--warn); }
-.psub[data-level="warn"]::before { content: "▲ "; }   /* never colour alone (add-ons set this too) */
+.psub[data-level="warn"]::before { content: "▲ "; }   /* never colour alone */
 .ph-tools { display: flex; gap: 6px; margin-left: auto; }
 /* on a phone the subtitle gets a row of its own under the title, so it isn't
    squeezed into a narrow column beside it */
@@ -414,5 +414,3 @@
 }
 .ev-src { font-family: var(--font-label); font-size: 9px; letter-spacing: .12em; color: var(--ink-3); border: 1px solid var(--line-2); padding: 0 3px; margin-right: 6px; vertical-align: 1px; }
 
-/* add-on panels: a small tag in the header */
-.ph-addon { font-family: var(--font-label); font-size: 9px; letter-spacing: .14em; color: var(--ink-3); border: 1px solid var(--line-2); padding: 0 4px; margin-left: auto; align-self: center; }

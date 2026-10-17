@@ -38,7 +38,6 @@ export const api = {
   // monerod's console commands. A change command carries the word the person
   // typed in the confirm dialog; the server checks it too.
   commands: () => request("GET", "/api/commands"),
-  addons: () => request("GET", "/api/addons"),
   discover: () => request("GET", "/api/discover", undefined, true),
   command: (name, args = {}, confirm) => request("POST", "/api/command", confirm ? { name, args, confirm } : { name, args }),
   nodeLog: (source, lines) => request("GET", `/api/node-log?source=${encodeURIComponent(source)}&lines=${encodeURIComponent(lines)}`, undefined, true),

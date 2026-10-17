@@ -6,7 +6,7 @@ fresh one at every start and only its own window has it: the page and every /api
 need it, else 403, so no browser or other program can use the dashboard), write guard for
 PUT/POST and for GET /api/node-log and /api/discover (X-Memstara: 1 and a matching Origin,
 else 403), 64 KB body limit (413), static files only from a list built at start-up (by
-walking web/, plus the files each add-on's web() names), security headers on every answer,
+walking web/), security headers on every answer,
 no CORS headers ever, and no stack traces or logins in answers.
 """
 
@@ -333,7 +333,6 @@ class Handler(BaseHTTPRequestHandler):
         "/api/commands": ("GET",),
         "/api/command": ("POST",),
         "/api/node-log": ("GET",),
-        "/api/addons": ("GET",),
         "/api/discover": ("GET",),
         "/api/health": ("GET",),
         "/api/privacy": ("POST",),
@@ -478,8 +477,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, app.test_connection(nv, uv, pw))
         if path == "/api/commands":
             return self._json(200, app.commands.listing(), safe=True)   # fixed text: the commands and their help
-        if path == "/api/addons":
-            return self._json(200, app.addons.listing(app.settings.values()))
         if path == "/api/discover":
             return self._json(200, app.poller.discover())
         if path == "/api/command":
@@ -488,11 +485,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/node-log":
             q = parse_qs(query or "")
             status, out = nodelog.read(app.settings, (q.get("source") or ["monerod"])[0],
-                                       (q.get("lines") or [None])[0],
-                                       app.addons.log_sources(app.settings.values()), app.poller.node_log_file(),
+                                       (q.get("lines") or [None])[0], app.poller.node_log_file(),
                                        app.poller.node_elsewhere())
             if self._private() and isinstance(out, dict) and isinstance(out.get("lines"), list):
-                # privacy mode shows UTC: local times in an add-on's log too
+                # privacy mode shows UTC: local times in the log too
                 out = dict(out, lines=[utc_stamps(x) if isinstance(x, str) else x for x in out["lines"]])
             return self._json(status, out)
         return self._json(404, {"error": "No such API"})

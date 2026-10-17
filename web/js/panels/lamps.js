@@ -29,7 +29,7 @@ export function describe(id) {
     case "spread_in": return `${g("thresholds.in24_warn", 4)} or more incoming connections from one company's servers for ${g("grace.spread_min", 10)} min.`;
     case "tor": return `Tor sending is on but your node has had no Tor connections for ${g("grace.tor_min", 10)} min. Transactions you send wait until one connects.`;
     case "flood": return `Black marble watch: what a new transaction's 16-member ring works like if one sender made the recent surge of new outputs (CHAIN screen, L). Heads-up under ${g("thresholds.flood_warn", 11)}, problem under ${g("thresholds.flood_bad", 8)}, for ${g("grace.flood_min", 30)} min. It can't tell a flood from a busy spell of ordinary use.`;
-    default: return "";   // add-on lamps bring their own help text
+    default: return "";
   }
 }
 
@@ -65,7 +65,6 @@ function build(list) {
       const rows = [{ label: "STATE", value: word }, { label: "READING", value: cur.value || "—" }];
       if (f.isNum(cur.since)) rows.push({ label: "LIT SINCE", value: f.dayClock(cur.since) });
       rows.push({ note: cur.help || describe(cur.id) });
-      if (cur.addon) rows.push({ label: "FROM", value: `ADD-ON · ${String(cur.addon).toUpperCase()}` });
       return { head: `${String(i + 1).padStart(2, "0")} · ${cur.label}`, rows };
     });
     nodes.set(l.id, node);

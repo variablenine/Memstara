@@ -174,10 +174,8 @@ class ServerTest(unittest.TestCase):
         st, body = get_json(self.port, "/api/history")
         self.assertEqual(body["window"], 3600)
 
-    def test_addons_api_without_add_ons(self):
-        st, body = get_json(self.port, "/api/addons")
-        self.assertEqual((st, body), (200, {"addons": []}), "not guarded: it only lists what's loaded")
-        for path in ("/addons/example/web/panel.js", "/addons/", "/addons/x/addon.py"):
+    def test_no_addons(self):
+        for path in ("/api/addons", "/addons/example/web/panel.js", "/addons/", "/addons/x/addon.py"):
             st, _, _ = request(self.port, "GET", path)
             self.assertEqual(st, 404, path)
 

@@ -120,7 +120,7 @@ class ScrubTest(unittest.TestCase):
     def test_ports_and_ids(self):
         t = self.t
         self.assertEqual(self.s("relay-7 · PORT 47213"), "relay-7 · PORT %s" % t("port", "47213"),
-                         "a server name is only known once an add-on reports it")
+                         "a name nothing has reported stays")
         self.assertEqual(self.s("on port 47213."), "on port %s." % t("port", "47213"))
         self.assertEqual(self.s("ports 18080, 47213 and 18089"),
                          "ports %s, %s and %s" % (t("port", "18080"), t("port", "47213"), t("port", "18089")))
@@ -128,16 +128,14 @@ class ScrubTest(unittest.TestCase):
         self.assertEqual(self.s("mining to " + ADDRESS), "mining to " + t("addr", ADDRESS))
         self.assertEqual(self.s("http://me:secret@127.0.0.1:18081"), "http://%s@127.0.0.1:18081" % t("login", "me:secret@"))
 
-    def test_learned_ports_and_servers(self):
+    def test_learned_ports(self):
         r = self.r
-        text = "Binding on 10.20.30.40:47213 via secret-exit-7 then 47213 alone; 147213 and 47213.5 stay"
+        text = "Binding on 10.20.30.40:47213 then 47213 alone; 147213 and 47213.5 stay"
         before = r.scrub(text)
         self.assertIn("47213 alone", before)
-        r.learn({"addons": {"x": {"link": {"port": 47213, "server": "secret-exit-7"}}},
-                 "peers": {"list": [{"port": 18080}]}})
+        r.learn({"host": {"proc": {"flags": ["--p2p-bind-port=47213"]}}, "peers": {"list": [{"port": 18080}]}})
         after = r.scrub(text)
         self.assertNotIn("47213 ", after.replace("147213", ""))
-        self.assertNotIn("secret", after)
         self.assertIn("147213 and 47213.5 stay", after)
         self.assertIn("%s:%s" % (r.token("ip", "10.20.30.40"), r.token("port", "47213")), after)
         self.assertIn("18080", r.scrub("peer on 18080"), "peers' ports aren't learned")
@@ -157,7 +155,7 @@ class ScrubTest(unittest.TestCase):
 
     def test_nothing_found_inside_a_token(self):
         r = self.r
-        r.learn({"addons": {"x": {"port": 4242}}})
+        r.learn({"host": {"proc": {"flags": ["--p2p-bind-port", "4242"]}}})
         tok = r.token("hex", "z")
         self.assertEqual(r.scrub("a %s b" % tok), "a %s b" % tok)
         for _ in range(3):
@@ -179,7 +177,6 @@ class AnswerTest(unittest.TestCase):
             "peers": {"list": [{"id": "e547c9c2", "ip": "100.90.146.87", "host": "100.90.146.87", "port": 18080,
                                 "net16": "100.79", "net24": "100.79.232"}],
                       "spread": {"out16": {"net": "100.79", "n": 1, "ips": ["100.90.146.87"]}}},
-            "addons": {"example": {"link": {"server": "relay-7", "port": 47213, "address": "10.20.30.40"}}},
             "host": {"proc": {"exe": HOME + "/monero/monerod", "flags": ["--p2p-bind-port", "47213",
                                                                               "--data-dir", HOME + "/.bitmonero"]}},
         }
@@ -195,8 +192,6 @@ class AnswerTest(unittest.TestCase):
         self.assertEqual(p, {"id": "e547c9c2", "ip": t("ip", "100.90.146.87"), "host": t("ip", "100.90.146.87"),
                              "port": t("port", "18080"), "net16": t("n16", "100.79"), "net24": t("n24", "100.79.232")})
         self.assertEqual(out["peers"]["spread"]["out16"]["net"], t("n16", "100.79"))
-        link = out["addons"]["example"]["link"]
-        self.assertEqual(link, {"server": t("srv", "relay-7"), "port": t("port", "47213"), "address": t("ip", "10.20.30.40")})
         self.assertEqual(out["host"]["proc"], {"exe": "~/monero/monerod",
                                                "flags": ["--p2p-bind-port", t("port", "47213"), "--data-dir", "~/.bitmonero"]})
         # the window's range keys line up: a /24 built from net24 matches the ban list's
@@ -266,12 +261,11 @@ class AnswerTest(unittest.TestCase):
         in free text it doesn't, is gone from the JSON that goes out."""
         r = self.r
         seeds = ["100.90.146.87", "100.79.232", "62.233.57", "2001:db8::77", ONION, "AliceTower", "alice",
-                 "Alice", "/home/alice", "relay-7", "47213", ADDRESS, TXID, "aa:bb:cc:dd:ee:ff", "secretpw"]
+                 "Alice", "/home/alice", "47213", ADDRESS, TXID, "aa:bb:cc:dd:ee:ff", "secretpw"]
         snap = {
-            "events": [{"text": "Banned 100.90.146.87 (relay-7, port 47213) for AliceTower"}],
+            "events": [{"text": "Banned 100.90.146.87 (port 47213) for AliceTower"}],
             "alerts": [{"text": "x", "details": ["100.90.146.87", "[2001:db8::77]:18080"]}],
             "lamps": [{"value": "PORT 47213"}],
-            "addons": {"a": {"link": {"port": "47213", "server": "relay-7"}, "note": "listening on 47213"}},
             "host": {"bind_if": {"address": "2001:db8::77"}, "proc": {"flags": ["--anonymous-inbound", ONION + ":18084,127.0.0.1:18084"]}},
             "something_new": {"deep": [["mining to " + ADDRESS, "tx " + TXID, "aa:bb:cc:dd:ee:ff", "/home/alice/x",
                                         "62.233.57.0/24", "100.79.232.x", "Alice's", "http://u:secretpw@1.2.3.4/"]]},
@@ -400,7 +394,7 @@ class ServerPrivacyTest(unittest.TestCase):
         """Every answer the window can ask for, as text."""
         out = {}
         for path in ("/api/snapshot", "/api/snapshot?after=-1&wait=0", "/api/settings", "/api/history?window=3600",
-                     "/api/addons", "/api/commands"):
+                     "/api/commands"):
             st, _, raw = request(self.port, "GET", path)
             self.assertEqual(st, 200, path)
             out[path] = raw.decode()

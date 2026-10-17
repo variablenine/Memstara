@@ -15,11 +15,9 @@ Private here means what could point at you, this computer or your node:
   addresses, the login in a URL, and a remote node's name in an RPC address;
 - ports: every port key, "port 47213" in text, a port written after a hidden address
   ("1.2.3.4:47213"), and your node's own ports wherever they turn up once learned (from
-  monerod's --p2p-bind-port flag and the add-ons' readings);
+  monerod's --p2p-bind-port flag);
 - this computer's name, your user name and your real name (as whole words), and your
   home folder (shown as ~);
-- server names an add-on reports (under a "server" key), wherever else they turn up once
-  learned;
 - Monero addresses, transaction ids and key images (any run of 64 or more hex digits, so a
   whole transaction a log line prints goes too, except the block hashes the chain screens
   are made of), and peer ids.
@@ -54,7 +52,6 @@ FLAG_NOT_RELAYED = 2      # pool.py: the node hasn't passed the transaction on y
 # keys (the last part of a dotted settings key counts too, see _str) and what they hold
 PORT_KEYS = frozenset({"port", "p2p_port", "rpc_port", "local_port", "remote_port"})
 NET_KEYS = frozenset({"net", "net16", "net24"})          # "1.2" (a /16) or "1.2.3" (a /24)
-SERVER_KEYS = frozenset({"server"})
 HOST_NAME_KEYS = frozenset({"host_name", "hostname"})
 PEER_ID_KEYS = frozenset({"peer_id"})
 USER_KEYS = frozenset({"rpc_user", "user", "username"})
@@ -63,7 +60,7 @@ URL_KEYS = frozenset({"rpc", "bootstrap_daemon_address", "bootstrap"})   # and a
 BLOCK_HASH_KEYS = frozenset({"hash", "top_hash", "top_block_hash", "prev_hash", "block_hash", "prev_id",
                              "main_chain_parent_block", "block_hashes"})
 # where the node's own ports are learned from (not the peers' ports)
-OWN_PARTS = ("addons", "host")
+OWN_PARTS = ("host",)
 OWN_PORT_FLAGS = ("--p2p-bind-port", "--p2p-bind-port-ipv6")
 
 # words too common to hide everywhere as a name (as a user name, the home folder still goes)
@@ -139,7 +136,6 @@ class Redactor:
         for word in re.split(r"[\s,]+", real or ""):
             self._add_name("name", word)
         self._ports: set = set()          # this node's own ports, learned from the readings
-        self._servers: set = set()        # server names add-ons report, learned from the readings
         self._cache = None                # (snapshot dict, its redacted JSON)
         self._compile()
 
@@ -155,9 +151,6 @@ class Redactor:
         if self._ports:
             alts = "|".join(sorted(self._ports, key=len, reverse=True))
             parts.append(("own", r"(?<![\w.])(?:%s)(?![\w]|\.\d)" % alts))
-        if self._servers:
-            alts = "|".join(re.escape(s) for s in sorted(self._servers, key=len, reverse=True))
-            parts.append(("server", r"(?<![\w-])(?:%s)(?![\w-])" % alts))
         if self._names:
             alts = "|".join(re.escape(w) for w in sorted(self._names, key=len, reverse=True))
             parts.append(("word", r"(?i:(?<![\w.-])(?:%s)(?![\w-]))" % alts))
@@ -265,8 +258,6 @@ class Redactor:
             return _DIGITS.sub(lambda d: self.token("port", _ok_port(d.group()) or d.group()), s)
         if kind == "own":
             return self.token("port", s)
-        if kind == "server":
-            return self.token("srv", s)
         if kind == "word":
             low = s.lower()
             return self.token(self._names.get(low, "name"), low)
@@ -280,17 +271,15 @@ class Redactor:
 
     # ------------------------------------------------------------------ learning
     def learn(self, snap: dict):
-        """Notes this node's own ports and the server names add-ons report in a snapshot, so they're
-        hidden wherever else they turn up (log lines, flags, the route's wording)."""
-        ports, servers = set(), set()
+        """Notes this node's own ports in a snapshot, so they're hidden wherever else they turn
+        up (log lines, flags, the route's wording)."""
+        ports = set()
 
         def visit(v, own):
             if isinstance(v, dict):
                 for k, x in v.items():
                     if own and k in PORT_KEYS and not isinstance(x, bool) and _ok_port(x):
                         ports.add(_ok_port(x))
-                    if k in SERVER_KEYS and isinstance(x, str) and x.strip():
-                        servers.add(x.strip())
                     visit(x, own)
             elif isinstance(v, list):
                 for x in v:
@@ -327,10 +316,9 @@ class Redactor:
             n_names = len(self._names)
             for h in names:
                 self._add_name("host", h)
-            if ports <= self._ports and servers <= self._servers and len(self._names) == n_names:
+            if ports <= self._ports and len(self._names) == n_names:
                 return
             self._ports |= ports
-            self._servers |= servers
             self._compile()
 
     # ------------------------------------------------------------------ answers
@@ -449,8 +437,6 @@ class Redactor:
             p = _ok_port(s)
             if p:
                 return self.token("port", p)
-        elif base in SERVER_KEYS:
-            return self.token("srv", s.strip())
         elif base in HOST_NAME_KEYS:
             return self.token("host", s.strip())
         elif base in PEER_ID_KEYS:
@@ -516,7 +502,8 @@ def utc_clocks(text: str, t: float) -> str:
     return _CLOCK24.sub(twenty_four, _CLOCK12.sub(twelve, text))
 
 
-# a date and time written in local time, as an add-on's log may be ("2025-06-01 09:30:00");
+# a date and time written in local time ("2025-06-01 09:30:00"), as a line some other program
+# wrote into the log may carry;
 # monerod's own lines carry fractions of a second ("09:30:00.100") and
 # are UTC already (logevents.py), so those are left alone
 _STAMP = re.compile(r"(?<![\d-])(\d{4})-(\d\d)-(\d\d)([ T])(\d\d):(\d\d)(?::(\d\d))?(?![\d.,:]| ?(?:UTC|GMT|Z\b|[+-]\d\d:?\d\d))")

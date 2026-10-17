@@ -1,8 +1,6 @@
 // D · Route: a line diagram of how the node is connected: other nodes, the
 // network link its peer-to-peer port is bound to (if any), the node, Tor
-// sending and this dashboard. Add-ons can add boxes (snapshot.route): one
-// with between "peers-node" takes the middle spot, the rest hang below the
-// node. Parts the dashboard can't see are drawn dashed.
+// sending and this dashboard. Parts the dashboard can't see are drawn dashed.
 import { $, svg, clear, setText, syncKV } from "../dom.js";
 import * as f from "../fmt.js";
 import { cut } from "../privacy.js";
@@ -41,21 +39,17 @@ export function renderRoute(snap) {
   const host = snap.host || null;
   const answering = src.answering !== false;
   const alertIds = new Set((snap.alerts || []).map((a) => a.id));
-  const extra = Array.isArray(snap.route) ? snap.route : [];
 
   // a restricted port hides the connection counts: unknown, not zero
   const counted = answering && !src.restricted && f.isNum(node.out_peers);
   const outTotal = counted ? node.out_peers + (node.tor_out || 0) : null;
   const pLevel = !counted ? "off" : outTotal === 0 ? "bad" : alertIds.has("peers") ? "warn" : "ok";
 
-  // the middle box: an add-on's if one gives it, else
-  // the interface the node's peer-to-peer port is bound to
-  const mid = extra.find((b) => b.between === "peers-node");
+  // the middle box: the interface the node's peer-to-peer port is bound to
   const hostOk = !!host && host.ok !== false;
   const nic = hostOk ? host.bind_if : null;
   let m = null;
-  if (mid) m = { title: mid.label, text: mid.value, level: lv(mid.level), linkLabel: mid.link?.label, linkLevel: mid.link?.level };
-  else if (nic) m = { title: nic.kind === "vpn" ? "VPN" : "NETWORK", text: `${String(nic.name || "?").toUpperCase()}${nic.up ? "" : " · DOWN"}${nic.address ? " · " + nic.address : ""}`, level: nic.up ? "ok" : "bad" };
+  if (nic) m = { title: nic.kind === "vpn" ? "VPN" : "NETWORK", text: `${String(nic.name || "?").toUpperCase()}${nic.up ? "" : " · DOWN"}${nic.address ? " · " + nic.address : ""}`, level: nic.up ? "ok" : "bad" };
 
   const inKnown = answering && !src.restricted && f.isNum(node.in_peers);
   const inN = inKnown ? node.in_peers : null;
@@ -74,11 +68,10 @@ export function renderRoute(snap) {
   const sendLevel = !torOn ? "off" : node.tor_out === 0 ? "warn" : "ok";
   const tText = !torKnown ? "SENDING —" : torOn ? `SENDING · ${f.plural(node.tor_out, "PEER", "PEERS")}` : "SENDING OFF";
 
-  // bottom row: dashboard, Tor, then any add-on boxes
+  // bottom row: dashboard and Tor
   const below = [
     { title: "DASHBOARD", text: location.host || "—", level: "ok", linkLevel: answering ? "ok" : "bad", linkLabel: f.isNum(src.latency_ms) ? `RPC ${Math.round(src.latency_ms)} ms` : "RPC" },
     { title: "TOR", text: tText, level: sendLevel, linkLevel: sendLevel },
-    ...extra.filter((b) => b !== mid && !b.row_only).slice(0, 2).map((b) => ({ title: b.label, text: b.value, level: lv(b.level), linkLevel: lv(b.link?.level || b.level), linkLabel: b.link?.label })),
   ];
 
   const pic = svg("g");
@@ -133,7 +126,6 @@ export function renderRoute(snap) {
   row("COMING IN", inKnown ? f.num(inN) : "—", inN ? null : "off");
   row("TOR SENDING", !torKnown ? "—" : torOn ? f.plural(node.tor_out, "PEER", "PEERS") : "OFF", sendLevel === "ok" ? null : sendLevel);
   if (torProxy !== null && torProxy !== undefined) row("TOR PROXY", torProxy ? "LISTENING" : "NOT LISTENING", torProxy ? null : torOn ? "warn" : "off");
-  for (const b of extra) if (b !== mid) row(String(b.label || "").toUpperCase(), b.detail || b.value || "—", lv(b.level) === "ok" ? null : lv(b.level));
   syncKV($("route-kv"), kvRows);
   setText($("route-sub"), m || nic ? "HOW YOUR NODE IS CONNECTED · LIVE" : "HOW YOUR NODE IS CONNECTED");
 }

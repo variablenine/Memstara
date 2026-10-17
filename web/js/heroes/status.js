@@ -59,19 +59,8 @@ const CORE_SCREEN = {
   double_spend: "mempool", restarts: "status", spread_out: "network", spread_in: "network", tor: "network",
   flood: "chain",
 };
-const SCREENS = ["status", "network", "chain", "mempool"];
 function screenFor(l) {
-  if (CORE_SCREEN[l.id]) return CORE_SCREEN[l.id];
-  // an add-on lamp ("myaddon.example_lamp"): the screen it names, else a guess from its own
-  // id and label (not the add-on's name)
-  if (SCREENS.includes(l.screen)) return l.screen;
-  const id = String(l.id || "");
-  const k = `${id.slice(id.indexOf(".") + 1)} ${l.label || ""}`.toLowerCase();
-  if (/restart|\bnode\b/.test(k)) return "status";
-  if (/double|mempool|\bpool\b/.test(k)) return "mempool";
-  if (/peer|eclipse|spread|\btor\b|i2p/.test(k)) return "network";
-  if (/sync|block|reorg|disk|chain/.test(k)) return "chain";
-  return "status";
+  return CORE_SCREEN[l.id] || "status";
 }
 
 const lit = (s) => s === "warn" || s === "bad";
@@ -159,7 +148,7 @@ export default function create(body, env) {
   let look = env.look();
   let shown = false;
   let snap = null;
-  let lamps = [];             // [{id, label, state, value, since, addon, help, go}]
+  let lamps = [];             // [{id, label, state, value, since, help, go}]
   // what the keyboard or a tap picked: a lamp (0 .. n-1), then the three gauges (n, n+1, n+2)
   let sel = -1;
   let tipOpen = false;        // the pick's details are showing beside it
@@ -237,19 +226,13 @@ export default function create(body, env) {
   const ca = (a) => a - TAU / 4;
   const at = (a, r) => [geo.cx + Math.sin(a) * r, geo.cy - Math.cos(a) * r];
 
-  // each lamp's slice of the ring; a wider gap where the core lamps end and each add-on's begin
+  // each lamp's slice of the ring
   function slices() {
     const n = lamps.length;
     if (!n) return [];
     const step = TAU / n;
     const gap = Math.min(0.045, step * 0.2);
-    return lamps.map((l, i) => {
-      const prev = lamps[(i - 1 + n) % n];
-      const next = lamps[(i + 1) % n];
-      const gA = n > 1 && (prev.addon || "") !== (l.addon || "") ? gap * 2.4 : gap;
-      const gB = n > 1 && (next.addon || "") !== (l.addon || "") ? gap * 2.4 : gap;
-      return { a0: i * step + gA / 2, a1: (i + 1) * step - gB / 2, mid: (i + 0.5) * step };
-    });
+    return lamps.map((l, i) => ({ a0: i * step + gap / 2, a1: (i + 1) * step - gap / 2, mid: (i + 0.5) * step }));
   }
   let segs = [];
 
@@ -884,8 +867,7 @@ export default function create(body, env) {
     const src = snap.source || {};
     const litN = lamps.filter((l) => lit(l.state)).length;
     const off = lamps.filter((l) => l.state === "off").length;
-    const addon = lamps.filter((l) => l.addon).length;
-    setText(hudLamps.v, !lamps.length ? "—" : addon ? `${f.num(lamps.length)} · ${f.num(addon)} FROM ADD-ONS` : f.num(lamps.length));
+    setText(hudLamps.v, !lamps.length ? "—" : f.num(lamps.length));
     hudOff.node.hidden = !off;
     setText(hudOff.v, f.num(off));
     setText(hudNode.v, src.answering === false ? "NOT ANSWERING" : f.isNum(src.latency_ms) ? `ANSWERS IN ${f.ms(src.latency_ms)}` : "—");
@@ -923,8 +905,7 @@ export default function create(body, env) {
       { label: "STATE", value: f.flag(l.state, STATE_WORD[l.state] || String(l.state || "—").toUpperCase()) },
     ];
     if (f.isNum(l.since) && lit(l.state)) rows.push({ label: "LIT SINCE", value: f.dayClock(l.since) });
-    if (l.addon) rows.push({ label: "FROM", value: `ADD-ON · ${String(l.addon).toUpperCase()}` });
-    // what the lamp watches, in plain words: an add-on brings its own; the lamp wall knows the core ones
+    // what the lamp watches, in plain words
     const about = l.help || describeLamp(l.id) || "";
     if (about) rows.push({ note: about });
     const touch = lastPointer !== "mouse";

@@ -24,12 +24,10 @@ PANEL_IDS = ["lamps", "chain", "peers", "route", "controls", "traffic", "history
 
 SECTIONS = ["source", "local", "thresholds", "grace", "display", "panels", "chain", "controls", "node",
             "server"]
-TYPES = ("int", "float", "bool", "choice", "text", "password", "url", "path")
-ENTRY_KEYS = ("key", "section", "label", "help", "type", "min", "max", "step", "choices", "default", "unit")
 
 
 def entry(key, type_, default, label, help_="", min_=None, max_=None, step=None, choices=None, unit=None):
-    """One schema entry. `choices` is a list of (value, label) pairs. Add-ons use this too."""
+    """One schema entry. `choices` is a list of (value, label) pairs."""
     if choices is not None:
         choices = [dict(c) if isinstance(c, dict) else {"value": c[0], "label": c[1]} for c in choices]
     if step is None and type_ in ("int",):
@@ -176,8 +174,8 @@ def file_format(raw: dict) -> int:
 
 def migrate(raw: dict) -> dict | None:
     """A settings file's contents (nested, as saved) brought up to FORMAT, or None when
-    it's already there. Only the values a migration names change: everything else,
-    add-ons' settings included, stays as it was."""
+    it's already there. Only the values a migration names change: everything else stays
+    as it was."""
     fmt = file_format(raw)
     if fmt >= FORMAT:
         return None
@@ -213,7 +211,7 @@ def _bad_text(s: str) -> bool:
 
 def validate_value(key: str, value, by_key: dict | None = None):
     """Return (normalised value, None) or (None, reason). `by_key` is a schema by key
-    (a Settings' own, with its add-ons' entries); the core schema when left out."""
+    (a Settings' own); the core schema when left out."""
     entry = (SCHEMA_BY_KEY if by_key is None else by_key).get(key)
     if entry is None:
         return None, "unknown setting"
@@ -290,29 +288,6 @@ def validate_value(key: str, value, by_key: dict | None = None):
     return None, "unsupported type"
 
 
-def check_entry(e, prefix: str) -> dict:
-    """An add-on's schema entry -> a clean copy, or ValueError with a plain reason.
-    Its key must be `<prefix>.<name>` and its default must pass its own validation."""
-    if not isinstance(e, dict):
-        raise ValueError("a settings entry isn't an object")
-    key = e.get("key")
-    if not isinstance(key, str) or not re.fullmatch(re.escape(prefix) + r"\.[a-z][a-z0-9_]{0,40}", key):
-        raise ValueError("setting %r must be named %s.<name>" % (str(key)[:60], prefix))
-    if e.get("type") not in TYPES:
-        raise ValueError("setting %s has an unknown type" % key)
-    out = entry(key, e["type"], e.get("default"), str(e.get("label") or key)[:80], str(e.get("help") or "")[:400],
-                e.get("min"), e.get("max"), e.get("step"), e.get("choices"), e.get("unit"))
-    out["section"] = prefix
-    if out["type"] == "choice" and (not out["choices"] or
-                                    any(set(c) != {"value", "label"} for c in out["choices"])):
-        raise ValueError("setting %s needs choices as (value, label) pairs" % key)
-    v, err = validate_value(key, out["default"], {key: out})
-    if err:
-        raise ValueError("setting %s: its default %s" % (key, err))
-    out["default"] = v
-    return out
-
-
 def cross_field_errors(values: dict, changed: set | None = None) -> dict:
     """Rules between settings. The error is reported on the key that was changed."""
     errors = {}
@@ -364,7 +339,6 @@ def flatten(nested: dict) -> dict:
 class Settings:
     """Thread-safe settings holder. Saved values plus run-only overrides (CLI flags).
 
-    The schema starts as the core's; extend() adds an add-on's entries (its own section).
     Keys in the file that no schema entry knows are ignored and dropped at the next save.
     """
 
@@ -380,36 +354,14 @@ class Settings:
         self._overrides: dict = {}
         self._listeners = []
         self._log = log or (lambda msg: print(msg, file=sys.stderr))
-        self._file_flat: dict = {}     # what the file held at load, flat (for keys added later)
         self.file_keys: set = set()    # keys the file held at load (empty on a first run)
         self.load_warnings: list[str] = []
-
-    def extend(self, entries: list, section: str) -> None:
-        """Add a section of entries (an add-on's, already checked with check_entry). A value
-        for them saved in the file is used, as if it had been known at load."""
-        with self._lock:
-            if section not in self.sections:
-                self.sections.append(section)
-            for e in entries:
-                key = e["key"]
-                if key in self.by_key:
-                    continue
-                self.schema.append(e)
-                self.by_key[key] = e
-                self.defaults[key] = e["default"]
-                self._values[key] = e["default"]
-                if key in self._file_flat:
-                    nv, err = validate_value(key, self._file_flat[key], self.by_key)
-                    if err:
-                        self._warn("Setting %s in %s %s; using the default." % (key, self.path.name, err))
-                    else:
-                        self._values[key] = nv
 
     # ---- loading and saving
     def load(self) -> "Settings":
         with self._lock:
             if not self.path.exists():
-                self._file_flat, self.file_keys = {}, set()
+                self.file_keys = set()
                 self._values = dict(self.defaults)
                 if self._save_enabled:
                     self._save_locked()
@@ -428,7 +380,7 @@ class Settings:
                         os.replace(self.path, bad)
                 except OSError:
                     pass
-                self._file_flat, self.file_keys = {}, set()
+                self.file_keys = set()
                 self._values = dict(self.defaults)
                 if self._save_enabled:
                     self._save_locked()
@@ -443,7 +395,7 @@ class Settings:
                     except OSError as e:
                         self._warn("Settings file %s couldn't be updated (%s)." % (self.path, type(e).__name__))
             flat = flatten(raw)
-            self._file_flat, self.file_keys = flat, set(flat)
+            self.file_keys = set(flat)
             values = dict(self.defaults)
             for k, v in flat.items():
                 if k not in self.by_key:
@@ -516,7 +468,7 @@ class Settings:
         return {"values": vals, "schema": schema, "rpc_password_set": self.password_set()}
 
     def validate(self, key: str, value):
-        """validate_value against this Settings' schema (core plus add-ons)."""
+        """validate_value against this Settings' schema."""
         return validate_value(key, value, self.by_key)
 
     # ---- changing

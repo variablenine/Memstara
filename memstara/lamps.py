@@ -1,9 +1,7 @@
-"""The annunciator wall: the core's 12 lamps, always in this order, then add-on lamps.
+"""The annunciator wall: 12 lamps, always in this order.
 
 state: ok | warn | bad | off. A lamp fed by an active alert carries that alert's
-level. `since` is when the lamp last left ok/off (null while ok or off). Add-on lamps
-come from addons.Addons.lamps() with ids "<add-on>.<id>" and also carry "addon" and
-"help".
+level. `since` is when the lamp last left ok/off (null while ok or off).
 """
 
 from __future__ import annotations
@@ -182,21 +180,11 @@ class LampTracker:
     def reset(self):
         self._since = {}
 
-    def build(self, rows, now, extra=()) -> list[dict]:
-        """rows: the core's (id, state, value) from compute(); extra: add-on lamp dicts
-        ({id, label, state, value, addon, help}), drawn after them."""
+    def build(self, rows, now) -> list[dict]:
+        """rows: (id, state, value) from compute()."""
         labels = dict(LAMPS)
-        out = []
-        for lamp_id, state, value in rows:
-            out.append({"id": lamp_id, "label": labels[lamp_id], "state": state, "value": value,
-                        "since": self._track(lamp_id, state, now)})
-        for l in extra:
-            out.append({"id": l["id"], "label": l["label"], "state": l["state"], "value": l["value"],
-                        "since": self._track(l["id"], l["state"], now), "addon": l["addon"], "help": l["help"]})
-        shown = {l["id"] for l in out}
-        for gone in [k for k in self._since if k not in shown]:
-            del self._since[gone]     # an add-on turned off: start afresh if it comes back
-        return out
+        return [{"id": lamp_id, "label": labels[lamp_id], "state": state, "value": value,
+                 "since": self._track(lamp_id, state, now)} for lamp_id, state, value in rows]
 
     def _track(self, lamp_id, state, now):
         if state in ("warn", "bad"):

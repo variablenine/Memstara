@@ -19,7 +19,6 @@ import { renderSystem, setSystemSettings } from "./panels/system.js";
 import { initFlood, renderFlood, setFloodSettings } from "./panels/flood.js";
 import { renderEvents } from "./panels/events.js";
 import { initComputer, renderComputer, seedComputer, recordComputer } from "./panels/computer.js";
-import { loadAddons, renderAddonPanels } from "./addons.js";
 import { initControls, renderControls, setControlSettings } from "./panels/controls.js";
 import { initConfirm } from "./confirm.js";
 import { initCommands, openCommands, commandsOpen, setCommandSettings } from "./commands.js";
@@ -103,10 +102,7 @@ function applySettings(v) {
   const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta && bg) meta.setAttribute("content", bg);
-  for (const sec of document.querySelectorAll("[data-panel]")) {
-    // an add-on's panel goes with the add-on ("Use this add-on" in its section)
-    sec.hidden = v[`panels.${sec.dataset.panel}`] === false || (sec.dataset.addon && v[`${sec.dataset.addon}.enabled`] === false);
-  }
+  for (const sec of document.querySelectorAll("[data-panel]")) sec.hidden = v[`panels.${sec.dataset.panel}`] === false;
   setLampSettings(v);
   setChainSettings(v);
   setPeerSettings(v);
@@ -143,7 +139,6 @@ function draw(snap) {
   panel("events", () => renderEvents(snap));
   panel("computer", () => renderComputer(snap));
   panel("controls", () => renderControls(snap));
-  guard("addons", () => renderAddonPanels(snap, now()));
   guard("tooltip", refreshTip);   // details left open on a lamp, a row or a dot move with the rest
 }
 
@@ -345,9 +340,6 @@ async function start() {
 
   initHeroes({ now, look: () => state.look, goScreen: (id) => selectScreen(id, { scroll: true }) });
   initPrivacySwitch();
-
-  // add-on panels first, so the settings below can show or hide them too
-  await loadAddons();
 
   if (settings) {
     try {

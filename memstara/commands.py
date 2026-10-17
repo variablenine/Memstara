@@ -1221,21 +1221,16 @@ class _Ctx:
 class Commands:
     """GET /api/commands and POST /api/command."""
 
-    def __init__(self, settings, poller=None, log=None, notes=None):
+    def __init__(self, settings, poller=None, log=None):
         self.settings = settings
         self.poller = poller
         self.log = log or (lambda msg: print(msg, file=sys.stderr))
-        self.notes = notes or (lambda: {})   # -> {command: text} from add-ons, added to its warn
         self._change_lock = threading.Lock()
 
     def listing(self) -> dict:
         order = {g: i for i, g in enumerate(GROUPS)}
         cmds = sorted(REGISTRY.values(), key=lambda c: order.get(c.group, 99))
         notes = {} if self._own_known() else {"ban": OWN_UNCHECKED}
-        for name, text in (self.notes() or {}).items():
-            name = ALIASES.get(name, name)
-            if name in REGISTRY:
-                notes[name] = (notes[name] + " " + text) if name in notes else text
         out = []
         for c in cmds:
             pub = c.public()

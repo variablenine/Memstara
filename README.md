@@ -30,7 +30,7 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 
 | Screen | The picture at the top | Panels |
 |---|---|---|
-| STATUS | A ring with one segment per thing being watched, lit when something needs a look, with the height, time since the last block and quick readouts in the middle. Click a segment to open the screen that explains it. | A · Lamp wall, and add-on panels |
+| STATUS | A ring with one segment per thing being watched, lit when something needs a look, with the height, time since the last block and quick readouts in the middle. Click a segment to open the screen that explains it. | A · Lamp wall |
 | NETWORK | A 3D tree of every connection you can turn and zoom: outgoing, incoming and Tor, with peers on one company's servers grouped. The moving dots are the data each peer really sent and received. A live chatter log beside it. | C · Peer scope, D · Route |
 | CHAIN | The last blocks as boxes receding into the distance, sized by weight and spaced by the wait before each, with the next block's timer. | B · Chain, K · System, L · Black marble watch |
 | MEMPOOL | One dot per waiting transaction, in bands by how long it has waited. | H · Mempool |
@@ -83,8 +83,6 @@ far along it is), then only the newest. Details:
 [docs/DESIGN.md](docs/DESIGN.md), "Black marble watch".
 
 Every chart has a table view or a hover readout with the exact numbers.
-Add-ons can add panels, lamps and boxes in the route diagram (see
-[Add-ons](#add-ons)).
 
 ## Run it
 
@@ -261,20 +259,6 @@ layout changes between Monero versions), the ZMQ feed (with the node read every 
 it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer lists
 `print_pl` shows).
 
-## Add-ons
-
-Anything made for one particular setup lives in an add-on, a folder in
-`addons/<name>/`, never in the core. None ship with Memstara; git ignores
-everything in `addons/` except its guide, so an add-on you make for your own
-setup never ends up in a commit by accident. Each add-on's folder has a
-`README.md` saying what it reads and how to set it up. The ones loaded show in the status line at the bottom of the
-screen (ADD-ONS) and each has its own section in Settings, where it can be
-turned off. To remove one, delete its folder and restart the dashboard;
-nothing else changes. Start the dashboard with `--no-addons` to load none.
-
-How to write one: [addons/README.md](addons/README.md), and
-[docs/DESIGN.md](docs/DESIGN.md), "Core and add-ons".
-
 ## Safety
 
 - Only its own window can use it. The window gets its readings from the
@@ -298,13 +282,13 @@ How to write one: [addons/README.md](addons/README.md), and
 ## For developers
 
 - `docs/DESIGN.md`: the data contract between the server and the screens,
-  the RPC calls and why, alert rules, local reads, add-ons, controls and
+  the RPC calls and why, alert rules, local reads, controls and
   settings.
 - `docs/STYLE.md`: look and wording rules.
 - `memstara/`: the server (Python standard library only) and the app window
   (`window.py`, GTK 4 and WebKitGTK through PyGObject; `desktop.py`, the app
   grid and start-at-login files). `web/`: the screens (plain HTML, CSS and
-  JavaScript modules, no build step). `addons/`: add-ons.
+  JavaScript modules, no build step).
 - Tests: `python3 -m unittest discover -s tests -v` (Python 3.10 or newer,
   nothing to install). They run against
   `tests/fake_monerod.py`, a test-only stand-in that answers with recorded

@@ -23,7 +23,7 @@ from memstara.rpc import READ_ALLOWED
 from memstara.settings import Settings
 
 TOP_KEYS = ["v", "generated", "t", "level", "source", "node", "chain", "peers", "mempool", "traffic", "alerts",
-            "lamps", "addons", "route", "host", "events", "hist", "clock_style", "seq"]
+            "lamps", "host", "events", "hist", "clock_style", "seq"]
 # everything the window gets about each waiting transaction (pool.PoolList.part)
 POOL_LIST_KEYS = {"list", "list_wanted", "list_cut", "mined", "check"}
 SOURCE_KEYS = {"mode", "rpc", "answering", "error", "latency_ms", "restricted", "last_ok", "poll_s",
@@ -39,7 +39,7 @@ def log_line(t, level, text, cat="global", loc="src/p2p/net_node.inl:340"):
 
 
 class Rig:
-    """A fake node, the dashboard with no add-ons, and stand-ins for this computer's reads."""
+    """A fake node, the dashboard, and stand-ins for this computer's reads."""
 
     def __init__(self, restricted=False, found=None, cadence=(5, 10)):
         self.tmp = tempfile.TemporaryDirectory()
@@ -139,7 +139,6 @@ class SnapshotTest(unittest.TestCase):
         # (real time, against the test's made-up clock) can move them a hair
         self.assertAlmostEqual(snap["traffic"]["rate_in"], 60000, delta=600)
         self.assertAlmostEqual(snap["traffic"]["rate_out"], 140000, delta=1400)
-        self.assertEqual((snap["addons"], snap["route"]), ({}, []), "no add-ons in the core tests")
         self.assertEqual(set(snap["host"]), HOST_KEYS)
         self.assertEqual(snap["host"]["computer"]["cpu_temp_c"], 61.0)
         self.assertEqual(snap["host"]["every_s"], 10)

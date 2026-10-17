@@ -4,7 +4,6 @@
 import { $, el, clear, setText, setData } from "./dom.js";
 import { api } from "./api.js";
 import * as f from "./fmt.js";
-import { addonList } from "./addons.js";
 import { isPrivate, plain, hasHidden } from "./privacy.js";
 
 // settings that can hold an address, a folder or a login: shown with their private parts
@@ -73,20 +72,10 @@ export function savedValues() {
   return saved;
 }
 
-// core sections in their order, then one per add-on (titled from the add-on),
-// then ABOUT
+// the sections the server has settings for, in their order, then ABOUT
 function sectionsInUse() {
   const ids = new Set(schema.map((s) => s.section));
-  const known = SECTIONS.filter((s) => ids.has(s.id) || s.id === "about");
-  for (const id of ids) {
-    if (SECTIONS.some((s) => s.id === id)) continue;
-    const a = addonList().find((x) => x.name === id);
-    known.splice(known.length - 1, 0, {
-      id, addon: !!a, title: `${String(a?.title || id).toUpperCase()}${a ? " · ADD-ON" : ""}`,
-      intro: a ? [(a.intro ? a.intro + " " : "") + `It lives in addons/${id}/; delete that folder and restart the dashboard to remove it.`] : [],
-    });
-  }
-  return known;
+  return SECTIONS.filter((s) => ids.has(s.id) || s.id === "about");
 }
 
 function changedKeys() {
@@ -426,7 +415,7 @@ function about() {
   h("WHAT THIS IS");
   p("A console for one Monero node. It runs on the same computer as the node, or on another one reaching it over the network, and talks to monerod only through its normal RPC port, so Monero itself is never changed and updates to Monero don't need updates here.");
   h("WHAT IT READS");
-  p("Everything monerod's RPC port answers, plus what RPC doesn't report, read from the computer itself: monerod's log file, the monerod process, each peer's round trip, CPU temperature, power, the network link the node is bound to and, if you use one, the Tor proxy (Settings → Computer reads). Add-ons in addons/ can read more; each one says what in its own settings section.");
+  p("Everything monerod's RPC port answers, plus what RPC doesn't report, read from the computer itself: monerod's log file, the monerod process, each peer's round trip, CPU temperature, power, the network link the node is bound to and, if you use one, the Tor proxy (Settings → Computer reads).");
   h("WHAT IT CAN CHANGE");
   p("Exactly what monerod's own console commands can change, nothing more: each command in the COMMANDS drawer sends the same RPC request monerod's console sends for it, and every change asks you to type a word to confirm. A few get a safety limit the console doesn't have (bans of public addresses only, at most 1,000 blocks per request). It never writes to monerod's files or anyone else's, and it loads nothing from the internet: fonts and code are all local.");
   h("SAFETY");

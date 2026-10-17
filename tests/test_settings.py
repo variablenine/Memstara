@@ -11,8 +11,7 @@ import unittest.mock
 from pathlib import Path
 
 import helpers  # noqa: F401
-from memstara.settings import (DEFAULTS, FORMAT, PANEL_IDS, SCHEMA, Settings, SettingsError, check_entry, entry,
-                              migrate)
+from memstara.settings import (DEFAULTS, FORMAT, PANEL_IDS, SCHEMA, Settings, SettingsError, migrate)
 
 
 class SettingsTest(unittest.TestCase):
@@ -183,7 +182,7 @@ class SettingsTest(unittest.TestCase):
 
     def test_old_file_moves_to_every_second_once(self):
         # a file from before reads every second (no "format"), with the old defaults it was
-        # first saved with, an add-on's section and a section nobody knows any more
+        # first saved with and two sections nobody knows any more
         self.path.write_text(json.dumps({
             "source": {"rpc_url": "http://127.0.0.1:28081", "refresh_s": 5, "timeout_s": 8},
             "local": {"enabled": True, "every_s": 10},
@@ -195,7 +194,7 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(raw["format"], FORMAT)
         self.assertEqual((raw["source"]["refresh_s"], raw["local"]["every_s"]), (1, 1))
         self.assertEqual(raw["someaddon"], {"enabled": True, "data_file": "~/x"},
-                         "an add-on's settings stay in the file before the add-on has loaded")
+                         "moving the file to the new format leaves unknown sections as they were")
         self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
         # once moved, a 5 picked later stays 5
         s.update({"source.refresh_s": 5})
@@ -244,71 +243,13 @@ class SettingsTest(unittest.TestCase):
         self.assertNotIn("server.allowed_hosts", s.values())
         self.assertIn("server.allowed_hosts", self.errors({"server.allowed_hosts": "node.lan"}))
 
-
-class ExtendTest(unittest.TestCase):
-    """Add-on settings: their own section, checked entries, values kept in the file."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.path = Path(self.tmp.name) / "settings.json"
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def entries(self):
-        return [check_entry(entry("demo.enabled", "bool", True, "Use it"), "demo"),
-                check_entry({"key": "demo.mode", "type": "choice", "default": "a", "label": "Mode",
-                             "choices": [("a", "A"), ("b", "B")]}, "demo"),
-                check_entry({"key": "demo.path", "type": "path", "default": "~/x.json"}, "demo")]
-
-    def test_check_entry(self):
-        e = check_entry({"key": "demo.n", "type": "int", "default": 3, "min": 1, "max": 9, "section": "other"}, "demo")
-        self.assertEqual(e["section"], "demo", "an add-on's section is always its name")
-        self.assertEqual(set(e), set(SCHEMA[0]))
-        for bad in ({"key": "other.n", "type": "int", "default": 1}, {"key": "demo.N", "type": "int", "default": 1},
-                    {"key": "demo.n", "type": "nope", "default": 1}, {"key": "demo.n", "type": "int", "default": "x"},
-                    {"key": "demo.c", "type": "choice", "default": "a"}, "demo.n"):
-            with self.assertRaises(ValueError, msg=bad):
-                check_entry(bad, "demo")
-
-    def test_values_in_the_file_survive_until_the_add_on_is_back(self):
-        self.path.write_text(json.dumps({"demo": {"mode": "b", "path": "/tmp/s.json", "gone": 1},
-                                         "thresholds": {"low_peers": 9}}))
-        s = Settings(self.path, log=lambda m: None).load()
-        self.assertEqual(s.get("thresholds.low_peers"), 9)
-        with self.assertRaises(SettingsError):
-            s.update({"demo.mode": "a"})                     # not known before extend()
-        s.extend(self.entries(), "demo")
-        self.assertEqual((s.get("demo.enabled"), s.get("demo.mode"), s.get("demo.path")), (True, "b", "/tmp/s.json"))
-        self.assertIn("demo.mode", [e["key"] for e in s.public()["schema"]])
-        self.assertIn("demo", s.sections)
-        s.update({"demo.mode": "a", "demo.enabled": False})
-        on_disk = json.loads(self.path.read_text())
-        self.assertEqual(on_disk["demo"], {"enabled": False, "mode": "a", "path": "/tmp/s.json"}, "unknown keys dropped")
-        s.reset_section("demo")
-        self.assertEqual((s.get("demo.enabled"), s.get("demo.mode")), (True, "a"))
-        self.assertIn("demo.mode", s.update({"demo.mode": "b"}))
-        self.assertIn("demo.mode", self.errors(s, {"demo.mode": "c"}))
-
-    def test_without_the_add_on_its_values_are_dropped_at_the_next_save(self):
+    def test_unknown_sections_dropped_at_the_next_save(self):
         self.path.write_text(json.dumps({"demo": {"mode": "b"}}))
         s = Settings(self.path, log=lambda m: None).load()
         self.assertNotIn("demo.mode", s.values())
         self.assertIn("demo", json.loads(self.path.read_text()), "loading alone never rewrites the file")
         s.update({"thresholds.low_peers": 9})
         self.assertNotIn("demo", json.loads(self.path.read_text()))
-
-    def test_bad_saved_value_uses_the_default(self):
-        self.path.write_text(json.dumps({"demo": {"mode": "zzz"}}))
-        s = Settings(self.path, log=lambda m: None).load()
-        s.extend(self.entries(), "demo")
-        self.assertEqual(s.get("demo.mode"), "a")
-        self.assertTrue(any("demo.mode" in w for w in s.load_warnings))
-
-    def errors(self, s, values):
-        with self.assertRaises(SettingsError) as cm:
-            s.update(values)
-        return cm.exception.errors
 
 
 if __name__ == "__main__":

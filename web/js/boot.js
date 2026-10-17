@@ -1,8 +1,7 @@
 // Start-up check: a short list of real checks (server, settings, node, port
-// type, add-ons), then a lamp test. Click or any key skips it.
+// type), then a lamp test. Click or any key skips it.
 import { $, el, clear } from "./dom.js";
 import * as f from "./fmt.js";
-import { addonList } from "./addons.js";
 
 const STEP_MS = 170;
 
@@ -37,9 +36,6 @@ export function runBoot(snapPromise, settings) {
         await show(line("DATA SOURCE", `LIVE · ${src.rpc || "—"}`, "ok"));
         await show(line("NODE ANSWERS", src.answering === false ? `NO · ${String(src.error || "").toUpperCase()}` : `YES · ${f.isNum(src.latency_ms) ? Math.round(src.latency_ms) + " ms" : ""}`, src.answering === false ? "bad" : "ok"));
         if (src.answering !== false) await show(line("RPC PORT", src.restricted ? "RESTRICTED · LIMITED DATA" : "UNRESTRICTED · FULL DATA", src.restricted ? "warn" : "ok"));
-        for (const a of addonList().filter((x) => x.enabled)) {
-          await show(line(`ADD-ON · ${String(a.title || a.name).toUpperCase()}`, a.error ? "DIDN'T LOAD" : "LOADED", a.error ? "warn" : "ok"));
-        }
         const lit = (snap.lamps || []).filter((l) => l.state === "warn" || l.state === "bad").length;
         await show(line("LAMP TEST", `${f.plural((snap.lamps || []).length, "LAMP", "LAMPS")} · ${lit} LIT`, lit ? "warn" : "ok"));
       }

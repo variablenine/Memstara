@@ -12,9 +12,7 @@ range of blocks. The pool's transactions are real ones (tests/fixtures/
 pool_txs.json, made on a regtest node) under made-up hashes; with live_pool on, the
 pool totals are worked out from them the way monerod does, and mine() puts some in a
 new block. Every request is recorded in `requests` as (name, params),
-where name is the JSON-RPC method or the path without its slash. Any path put in
-`files` ({"/x.json": object}) is served as JSON too, so add-on tests can read a file
-over HTTP.
+where name is the JSON-RPC method or the path without its slash.
 """
 
 from __future__ import annotations
@@ -87,8 +85,6 @@ class _Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(n) if n else b""
         path = self.path.split("?", 1)[0]
-        if path in fake.files:
-            return self._send(200, fake.files[path])
         if fake.login and not fake.check_digest(self.command, self.headers.get("Authorization") or ""):
             nonce = os.urandom(8).hex()
             fake.nonces.add(nonce)
@@ -152,7 +148,6 @@ class FakeMonerod:
                         ("get_connections", "get_bans", "sync_info", "hard_fork_info", "get_fee_estimate",
                          "get_version", "get_transaction_pool_stats", "get_net_stats")}
         self.info = fixture("get_info_restricted.json" if restricted else "get_info.json")
-        self.files: dict = {}                    # extra JSON files served by path
         self.t0 = clock()
         self.rate_in, self.rate_out = 60000, 140000
         tpl = fixture("get_last_block_header.json")["block_header"]

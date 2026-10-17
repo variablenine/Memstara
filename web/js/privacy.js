@@ -28,7 +28,7 @@ const WORDS = {
   ip: "hidden address", ip6: "hidden address", n16: "hidden range", n24: "hidden range", net: "hidden range",
   port: "hidden port", tor: "hidden onion address", i2p: "hidden I2P address", mac: "hidden hardware address",
   host: "hidden computer name", user: "hidden user name", name: "hidden name", login: "hidden login",
-  srv: "hidden server name", id: "hidden peer ID", tx: "hidden transaction", hex: "hidden code", addr: "hidden wallet address",
+  id: "hidden peer ID", tx: "hidden transaction", hex: "hidden code", addr: "hidden wallet address",
 };
 
 // the browser's own textContent, kept before privacy mode puts its own in front of it
@@ -70,7 +70,6 @@ const SHAPE = {
   tor: (r) => run(r, 10) + ".onion",
   i2p: (r) => run(r, 10) + ".i2p",
   mac: (r) => groups(r, 6, 2, 2, ":"),
-  srv: (r) => run(r, between(r, 4, 8)),
   id: (r) => run(r, 10),
   tx: (r) => run(r, 12),
   hex: (r) => run(r, 12),

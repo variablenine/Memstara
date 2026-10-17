@@ -4,10 +4,6 @@
 // selected long enough to copy it.
 import { $, el, setText, setData } from "../dom.js";
 import * as f from "../fmt.js";
-import { addonTitle } from "../addons.js";
-
-// alerts the core raises itself; anything else names the add-on it came from
-const CORE_SOURCES = new Set(["dashboard", "rpc", "node", "local", "log"]);
 
 const shown = new Map();   // alert key -> its row's parts
 let order = "";            // the keys in list order, as last put in
@@ -23,9 +19,8 @@ function makeRow() {
     text: el("span", { class: "alert-text" }),
     ips: el("span", { class: "alert-ips" }),
     span: el("span", { class: "alert-for" }),
-    src: el("span", { class: "alert-src" }),
   };
-  r.li = el("li", { class: "alert-row" }, r.tag, el("div", {}, r.title, r.text, r.ips), el("span", { class: "alert-since" }, r.span, r.src));
+  r.li = el("li", { class: "alert-row" }, r.tag, el("div", {}, r.title, r.text, r.ips), el("span", { class: "alert-since" }, r.span));
   return r;
 }
 
@@ -51,7 +46,6 @@ export function renderAlerts(snap, now) {
     setText(r.text, a.text || "");
     put(r.ips, Array.isArray(a.ips) && a.ips.length ? "ADDRESSES · " + a.ips.join("  ") : "");
     setText(r.span, forText(a.since, now));
-    put(r.src, a.source && !CORE_SOURCES.has(a.source) ? " · " + addonTitle(a.source).toUpperCase() : "");
   }
   for (const [key, r] of shown) if (!keys.includes(key)) { r.li.remove(); shown.delete(key); }
   // rows are moved only when an alert came, went or changed places

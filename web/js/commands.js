@@ -6,19 +6,14 @@ import { $, el, clear, setText, setData } from "./dom.js";
 import { api } from "./api.js";
 import { askConfirm } from "./confirm.js";
 import * as f from "./fmt.js";
-import { addonLogs } from "./addons.js";
 import { isPrivate } from "./privacy.js";
 
 const GROUPS = ["Node", "Chain", "Transactions", "Network", "Bans", "Mining", "Logs"];
-// log files: monerod's own, plus any an add-on offers
+// the one log file: monerod's own
 function logViews() {
   return [
     { name: "log:monerod", title: "monerod's log", group: "Log files", kind: "file", source: "monerod",
       summary: "The last lines of monerod's own log file (Settings → Node's log sets where it is). Read-only." },
-    ...addonLogs().map((l) => ({
-      name: `log:${l.source}`, title: l.title || l.source, group: "Log files", kind: "file", source: l.source,
-      summary: `${l.summary ? l.summary + " " : ""}From the ${l.addonTitle || l.addon} add-on. Read-only.`,
-    })),
   ];
 }
 const SKIP_KEYS = new Set(["status", "untrusted", "credits", "top_hash", "id", "jsonrpc"]);

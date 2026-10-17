@@ -1,5 +1,5 @@
-"""Ties the pieces together: settings, add-ons, the poller thread and the local server
-that feeds the app window."""
+"""Ties the pieces together: settings, the poller thread and the local server that feeds
+the app window."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import time
 from pathlib import Path
 
 from . import host
-from .addons import Addons
 from .commands import Commands
 from .poller import Poller, test_connection
 from .privacy import Redactor
@@ -20,24 +19,19 @@ from .util import WEB_DIR, state_dir as default_state_dir
 class App:
     def __init__(self, settings, *, host: str = "127.0.0.1", port: int | None = None,
                  web_dir: Path | str = WEB_DIR, state_dir: Path | str | None = None,
-                 clock=time.time, log=None, addons_dir: Path | str | None = None,
-                 host_reader=None, discover=None, node_log=None, key: str | None = None):
-        """addons_dir: the folder holding add-ons (addons/ in the repo for a normal start);
-        None loads none. host_reader, discover and node_log replace the local reads (tests).
+                 clock=time.time, log=None, host_reader=None, discover=None, node_log=None,
+                 key: str | None = None):
+        """host_reader, discover and node_log replace the local reads (tests).
         key: the window key (see server.py); the app window gets it in window_url."""
         self.settings = settings
         self.clock = clock
         self.log = log or (lambda msg: print(msg, file=sys.stderr))
-        self.addons = Addons(addons_dir, self.log, clock)
-        self.addons.register_settings(settings)
         sdir = Path(state_dir) if state_dir is not None else default_state_dir()
-        self.poller = Poller(settings, clock=clock, state_dir=sdir, log=self.log, addons=self.addons,
+        self.poller = Poller(settings, clock=clock, state_dir=sdir, log=self.log,
                              host_reader=host_reader, discover=discover, node_log=node_log)
-        self.commands = Commands(settings, self.poller, self.log,
-                                 notes=lambda: self.addons.command_notes(settings.values()))
+        self.commands = Commands(settings, self.poller, self.log)
         self.web_dir = Path(web_dir)
         self.static = build_static_map(self.web_dir)
-        self.static.update(self.addons.static_map())
         self.privacy = Redactor()   # privacy mode's tokens (server.py uses it while display.privacy is on)
         self.key = key
         self.httpd = DashboardServer(self, host, settings.get("server.port") if port is None else port, key=key)

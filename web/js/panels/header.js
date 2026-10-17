@@ -1,6 +1,5 @@
 // Top bar, connection banner and the bottom status bar / nameplate.
 import { $, setText, setData, clear, el } from "../dom.js";
-import { addonList } from "../addons.js";
 import * as f from "../fmt.js";
 
 let lastRpc = null;   // the node address the readings came from, for the chip when the server is lost
@@ -58,8 +57,6 @@ export function renderHeader(snap) {
     ["POLL", f.isNum(src.poll_s) ? `${src.poll_s} S` : "—"],
     ["LAST", f.clock(t)],
   ];
-  const adds = addonList().filter((a) => a.enabled);
-  if (adds.length) bits.push(["ADD-ONS", adds.map((a) => String(a.title || a.name).toUpperCase() + (a.error ? " (ERROR)" : "")).join(", ")]);
   const vit = $("sb-vitals");
   const labels = bits.map((b) => b[0]).join("|");
   if (vit.dataset.labels !== labels) {

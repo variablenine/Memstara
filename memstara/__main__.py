@@ -8,7 +8,6 @@ import sys
 
 from . import VERSION
 from .settings import Settings, SettingsError
-from .util import REPO_DIR
 
 
 def parse_args(argv=None):
@@ -31,10 +30,6 @@ def parse_args(argv=None):
                    help="the window's local port for this run (default: setting server.port, 18200)")
     p.add_argument("--config", metavar="PATH",
                    help="settings file (default ~/.config/memstara/settings.json)")
-    g = p.add_mutually_exclusive_group()
-    g.add_argument("--addons", metavar="DIR",
-                   help="folder of add-ons to load (default: addons/ in the app's folder)")
-    g.add_argument("--no-addons", action="store_true", help="load no add-ons")
     p.add_argument("--debug", action="store_true", help=argparse.SUPPRESS)   # the screens' console in the terminal
     p.add_argument("--version", action="version", version="memstara " + VERSION)
     return p.parse_args(argv)
@@ -50,7 +45,6 @@ def main(argv=None) -> int:
         return desktop.cli(args)
 
     from . import window
-    addons_dir = None if args.no_addons else (args.addons or REPO_DIR / "addons")
 
     def make_app(key):
         """Runs once the window can open, in the first copy only (a second start just
@@ -63,7 +57,7 @@ def main(argv=None) -> int:
             raise window.StartError("The settings file couldn't be saved (%s). Check that your "
                                     "home folder isn't full or read-only." % (e.strerror or type(e).__name__)) from None
         try:
-            app = App(settings, port=args.port, addons_dir=addons_dir, key=key)
+            app = App(settings, port=args.port, key=key)
         except OSError as e:
             port = args.port if args.port is not None else settings.get("server.port")
             raise window.StartError(
@@ -71,22 +65,16 @@ def main(argv=None) -> int:
                 "Memstara is running in a terminal, stop it there with Ctrl+C and start the app "
                 "again. If another program uses that port, start the app with another one: "
                 "python3 -m memstara --port 18201" % (port, e.strerror or type(e).__name__)) from None
-        # after App: the add-ons' settings are known by then, so saving keeps theirs too
         find_node_on_first_run(settings, log=lambda msg: print(msg, flush=True))
         print("Memstara %s: reading %s" % (VERSION, _hostport(settings.get("source.rpc_url"))),
               flush=True)
         if not app.static:
             print("Note: web/ has no screens yet; the window will be empty.", file=sys.stderr)
-        for a in app.addons.items:
-            print("Add-on %s: %s" % (a.name, a.error if a.addon is None else
-                                     "on" if settings.get(a.name + ".enabled") else "turned off in settings"),
-                  file=sys.stderr if a.addon is None else sys.stdout, flush=True)
         return app
 
     # options that only count when the app starts (a copy already running keeps its own)
     given = (("--safe-graphics", args.safe_graphics), ("--port", args.port is not None),
-             ("--config", args.config), ("--addons", args.addons), ("--no-addons", args.no_addons),
-             ("--debug", args.debug))
+             ("--config", args.config), ("--debug", args.debug))
     return window.run(make_app, background=args.background, safe_graphics=args.safe_graphics,
                       debug=args.debug, startup_only=[flag for flag, on in given if on])
 

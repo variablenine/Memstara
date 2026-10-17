@@ -22,6 +22,3 @@ What's in scope:
 - anything that writes outside `~/.config/memstara`, `~/.local/state/memstara`
   and the app's own entries in `~/.local/share/applications` and
   `~/.config/autostart`.
-
-Add-ons are code you choose to run with your own rights, so what an add-on
-does is up to whoever wrote it.
