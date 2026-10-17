@@ -1,4 +1,4 @@
-// CONTROLS screen hero: the ban clock. One ring per address or range your
+// BANS screen hero: the ban clock. One ring per address or range your
 // node is banning right now with 24 h or less left (monerod's get_bans, read
 // every minute). Each ring's lit arc starts at 12 o'clock and is as long as
 // the time left out of 24 h, so it drains back toward the top as the ban runs
@@ -10,11 +10,11 @@
 // the bans from the last reading, still counted down to their ends.
 //
 // Hover, focus or tap a ring for its details; click it (or press Enter) to
-// find that ban's row in the CONTROLS panel, where UNBAN and its confirm step
-// are. The hero itself never changes anything on the node.
+// find that ban's row in the BAN LIST panel. Nothing here changes anything on
+// the node.
 import { $, el, clear, setText, setAttr } from "../dom.js";
 import * as f from "../fmt.js";
-import { rangeLabel } from "../panels/controls.js";
+import { rangeLabel } from "../panels/bans.js";
 import { hiddenRange } from "../privacy.js";
 import { createStage, glowSprite, stamp, moving, clamp, ease, TAU } from "../fx/space.js";
 
@@ -24,7 +24,7 @@ const MIN_TRACKS = 7;           // fewer bans than this spread out over this man
 const SWEEP_S = 1.3;            // a new ban's arc sweeps in this long
 const FADE_S = 1.5;             // an ended ban fades this long
 const NEW_FOR_S = 120;          // a fresh ban keeps its NEW mark this long
-const FOUND_MS = 3400;          // the CONTROLS row stays lit this long
+const FOUND_MS = 3400;          // the BAN LIST row stays lit this long
 const LABEL_W = 124;            // room for a label beside the clock (CSS px)
 const COL_GAP = 50;             // from the clock's rim to the label columns
 const MIN_R_LABELLED = 128;     // with less room than this the labels go in the list
@@ -37,8 +37,8 @@ const underBar = () => {
 };
 const TOP = -Math.PI / 2;
 const FONT = '"Plex Mono", ui-monospace, monospace';
-const HINT = "HOVER OR TAB TO A RING · CLICK IT TO FIND THE BAN IN CONTROLS";
-const HINT_TOUCH = "TAP A RING FOR ITS DETAILS · TAP IT AGAIN TO FIND THE BAN IN CONTROLS";
+const HINT = "HOVER OR TAB TO A RING · CLICK IT TO FIND THE BAN IN THE BAN LIST";
+const HINT_TOUCH = "TAP A RING FOR ITS DETAILS · TAP IT AGAIN TO FIND THE BAN IN THE BAN LIST";
 const touchFirst = () => typeof matchMedia === "function" && matchMedia("(hover: none)").matches;
 
 // a ban's host in plain words: 62.233.57.0/24 -> 62.233.57.x, a block of 256
@@ -243,7 +243,7 @@ export default function create(body, env) {
     wide = Math.min(byH, byLabels) >= MIN_R_LABELLED;
     g.R = Math.max(70, Math.min(wide ? byLabels : w / 2 - 34, byH, 250));
     g.cx = Math.round(w / 2);
-    // a view stretched tall (beside a long CONTROLS list) keeps the clock near its top, not adrift mid-way
+    // a view stretched tall (beside a long BAN LIST) keeps the clock near its top, not adrift mid-way
     g.cy = Math.round(Math.min(h / 2, g.R + TOP_ROOM));
     g.rIn = g.R * (g.R < 175 ? 0.5 : 0.43);   // a small clock gives its centre words more room
     spacing();
@@ -657,9 +657,9 @@ export default function create(body, env) {
       rows.push({ label: "LAST READ", value: readAt() ?? "—" },
         { note: "Your node isn't answering, so this is its ban list from the last reading, counted down here. If monerod restarts, its bans are cleared." });
     }
-    rows.push({ note: via === "key" ? "Enter finds this ban in the CONTROLS panel, where UNBAN is."
-      : lastPointer === "touch" ? "Tap it again to find this ban in the CONTROLS panel, where UNBAN is."
-      : "Click to find this ban in the CONTROLS panel, where UNBAN is." });
+    rows.push({ note: via === "key" ? "Enter finds this ban in the BAN LIST panel."
+      : lastPointer === "touch" ? "Tap it again to find this ban in the BAN LIST panel."
+      : "Click to find this ban in the BAN LIST panel." });
     return rows;
   }
   // the shared tooltip is fixed to the window, so a ring's tip goes when the page scrolls under it
@@ -687,7 +687,7 @@ export default function create(body, env) {
   function choose(it, { tip = false, tell = true } = {}) {
     selected = it || null;
     if (!selected) { tipHide(); lightRow(); redraw(); return; }
-    if (tell) say.textContent = `${headOf(selected)}. ${f.dur(leftOf(selected))} left, ends at ${f.dayClock(selected.end)}. Enter shows it in the CONTROLS panel.`;
+    if (tell) say.textContent = `${headOf(selected)}. ${f.dur(leftOf(selected))} left, ends at ${f.dayClock(selected.end)}. Enter shows it in the BAN LIST panel.`;
     lightRow();
     redraw();
     if (tip) requestAnimationFrame(() => tipAt(selected));
@@ -714,7 +714,7 @@ export default function create(body, env) {
     const it = hitAt(p.x, p.y);
     if (!it) { tapped = null; choose(null); return; }
     if (lastPointer === "mouse") { choose(it, { tell: false }); find(it); return; }
-    if (tapped === it) { find(it); return; }            // second tap: find it in CONTROLS
+    if (tapped === it) { find(it); return; }            // second tap: find it in the BAN LIST
     tapped = it;
     choose(it, { tell: false });
     tipShow(e.clientX, e.clientY, it);
@@ -746,7 +746,7 @@ export default function create(body, env) {
     choose(rings[(next + rings.length) % rings.length], { tip: true });
   });
 
-  // ---- finding a ban's row in the CONTROLS panel (which re-draws its list on every reading)
+  // ---- finding a ban's row in the BAN LIST panel (which re-draws its list on every reading)
   function rowFor(host) {
     const box = $("ban-list");
     if (!box) return null;
@@ -773,12 +773,11 @@ export default function create(body, env) {
     if (box) for (const li of box.querySelectorAll(".bn-found")) { li.classList.remove("bn-found"); li.style.animationDelay = ""; }
   }
   function find(it) {
-    const panel = $("p-controls");
+    const panel = $("p-bans");
     const box = $("ban-list");
-    if (!panel || !box || panel.hidden) { note("THE CONTROLS PANEL IS HIDDEN · SETTINGS → PANELS SHOWS IT"); return; }
-    if (box.closest("[hidden]")) { note("CONTROLS ARE TURNED OFF · SETTINGS → CONTROLS"); return; }
+    if (!panel || !box || panel.hidden) { note("THE BAN LIST PANEL IS HIDDEN · SETTINGS → PANELS SHOWS IT"); return; }
     const row = rowFor(it.host);
-    if (!row) { note(`${it.text} ISN'T IN THE CONTROLS LIST RIGHT NOW`); return; }
+    if (!row) { note(`${it.text} ISN'T IN THE BAN LIST RIGHT NOW`); return; }
     unmark();
     clearTimeout(found?.timer);
     found = { host: it.host, until: performance.now() + FOUND_MS, timer: setTimeout(() => { found = null; watch.disconnect(); unmark(); }, FOUND_MS) };
@@ -791,7 +790,7 @@ export default function create(body, env) {
       tipHide();   // the tip is fixed to the window: it would be left floating over the panel
       row.scrollIntoView({ block: "center", behavior: moving(look) ? "smooth" : "auto" });
     }
-    note(`${it.text} · LIT IN THE CONTROLS PANEL, WHERE UNBAN IS`);
+    note(`${it.text} · LIT IN THE BAN LIST PANEL`);
   }
   function note(text) {
     clearTimeout(noteTimer);
@@ -859,7 +858,7 @@ export default function create(body, env) {
     const rest = order.filter((it) => it.slot < 0);
     more.hidden = !rest.length;
     if (rest.length) {
-      setText(more, `+${f.num(rest.length)} MORE NOT DRAWN (THE CLOCK HAS ${RINGS} RINGS) · EACH ENDS WITHIN ${f.dur(leftOf(rest[0]))} · ALL ARE LISTED IN CONTROLS`);
+      setText(more, `+${f.num(rest.length)} MORE NOT DRAWN (THE CLOCK HAS ${RINGS} RINGS) · EACH ENDS WITHIN ${f.dur(leftOf(rest[0]))} · ALL ARE IN THE BAN LIST`);
     }
     // subtitle and the canvas's spoken summary
     setText(env.sub, off ? `FROM YOUR NODE · NOT ANSWERING${t ? ` · LAST READ ${t}` : ""}`
@@ -869,7 +868,7 @@ export default function create(body, env) {
     setAttr(canvas, "aria-label", off
       ? `Ban clock: your node isn't answering.${order.length ? ` Showing the ${f.plural(order.length, "ban")} with 24 hours or less left at its last reading${t ? `, at ${t}` : ""}, counted down here; if monerod restarts, its bans are cleared.` : ""}`
       : known
-      ? `Ban clock: ${f.plural(order.length, "ban")} with 24 hours or less left${order.length > RINGS ? ` (the ${RINGS} with the most time left are drawn)` : ""}, ${f.num(node.bans_long)} more with over 24 hours left.${soon ? ` Ends next: ${soon.text}, in ${f.dur(leftOf(soon))}.` : ""} Arrow keys step through the bans; Enter finds the selected one in the CONTROLS panel.`
+      ? `Ban clock: ${f.plural(order.length, "ban")} with 24 hours or less left${order.length > RINGS ? ` (the ${RINGS} with the most time left are drawn)` : ""}, ${f.num(node.bans_long)} more with over 24 hours left.${soon ? ` Ends next: ${soon.text}, in ${f.dur(leftOf(soon))}.` : ""} Arrow keys step through the bans; Enter finds the selected one in the BAN LIST panel.`
       : `Ban clock: ${why ? why.toLowerCase() : "no ban list"}.`);
   }
 

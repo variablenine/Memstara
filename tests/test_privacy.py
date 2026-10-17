@@ -462,10 +462,8 @@ class ServerPrivacyTest(unittest.TestCase):
         st, _, raw = request(self.port, "POST", "/api/settings/reset", body={"section": "display"}, headers=WRITE)
         self.assertEqual(st, 200)
         self.assertTrue(self.settings.get("display.privacy"), "reset to defaults keeps privacy mode on")
-        st, _, raw = request(self.port, "POST", "/api/command", headers=WRITE,
-                             body={"name": "ban", "args": {"hosts": "77.88.100.7", "seconds": 3600}, "confirm": "BAN"})
-        self.assertEqual(st, 403, raw)
-        self.assertIn("Privacy mode", json.loads(raw)["error"])
+        st, _, raw = request(self.port, "POST", "/api/command", headers=WRITE, body={"name": "bans"})
+        self.assertEqual(st, 200, "the read-only commands still work, with their answers hidden")
         st, _, raw = request(self.port, "POST", "/api/test-connection", headers=WRITE,
                              body={"rpc_url": "http://⟦host_0011aabb⟧:18081"})
         self.assertEqual(st, 400)

@@ -98,18 +98,14 @@
 .cmd-nav button { flex-wrap: wrap; row-gap: 1px; padding: 6px 14px; }
 .cmd-nav .cmd-t { flex: 1 1 auto; text-transform: uppercase; }
 .cmd-nav .cmd-n { flex-basis: 100%; font-family: var(--font-mono); font-size: var(--fs-0); color: var(--ink-3); letter-spacing: 0; }
-.cmd-nav .cmd-chg { font-size: calc(9px * var(--scale)); letter-spacing: .1em; color: var(--bad-ink-2); border: 1px solid rgba(var(--bad-rgb), .45); padding: 0 4px; }
 .cmd-none { padding: 10px 14px; color: var(--ink-3); font-size: var(--fs-1); }
 .cmd-main { gap: 14px; }
 .cmd-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
 .cmd-head h3 { font-family: var(--font-label); letter-spacing: .14em; font-size: var(--fs-3); font-weight: 600; }
 .cmd-name { font-family: var(--font-mono); color: var(--accent); font-size: var(--fs-1); }
 .cmd-kind { margin-left: auto; font-family: var(--font-label); letter-spacing: .12em; font-size: var(--fs-0); color: var(--ink-3); }
-.cmd-kind[data-kind="change"] { color: var(--bad-ink-2); }
-.cmd-warn { color: var(--warn); font-size: var(--fs-1); line-height: 1.55; max-width: 72ch; border-left: 2px solid rgba(var(--warn-rgb), .6); padding-left: 10px; }
 .cmd-form { grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr)); }
 .cmd-form .finput input, .cmd-form .finput textarea { width: 100%; }
-.cmd-lines { min-height: 80px; resize: vertical; font-family: var(--font-mono); }
 .cmd-calls { color: var(--ink-4); font-size: var(--fs-0); font-family: var(--font-mono); }
 .cmd-out { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
 .cmd-meta { color: var(--ink-3); font-size: var(--fs-0); letter-spacing: .08em; }

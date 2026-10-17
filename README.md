@@ -5,13 +5,13 @@ the same computer as `monerod`, or on another one that reaches the node over
 the network. It shows the node's health, its connections, the
 chain, the mempool, traffic and history, with a lamp wall that lights up when
 something needs a look, a settings menu for every limit and display choice,
-and a command drawer with every `monerod` console command.
+and a command drawer with `monerod`'s read-only console commands.
 
-It sits on top of `monerod` and never changes Monero's code. Changes to the
-node only go through the node's own RPC port, the same way `monerod`'s own
-console commands do (each one is a front end for an RPC request, see
-`src/daemon/rpc_command_executor.cpp` in Monero's source). So the dashboard
-can change exactly what the console can, nothing more, and Monero updates
+It only reads. It never changes Monero's code, and it can't change anything
+on the node: it asks the node's RPC port the same questions `monerod`'s own
+read-only console commands ask (each one is a front end for an RPC request,
+see `src/daemon/rpc_command_executor.cpp` in Monero's source), and every
+method it can send is on one short list in `memstara/rpc.py`. Monero updates
 don't need dashboard updates. Reads go a little further: it also looks at
 `monerod`'s log file and at the computer itself, read-only, for things RPC
 doesn't report.
@@ -36,7 +36,7 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 | MEMPOOL | One dot per waiting transaction, in bands by how long it has waited. | H · Mempool |
 | TRAFFIC | A scope of download and upload over the last 15 minutes. | F · Traffic, G · History |
 | COMPUTER | Dials for CPU temperature (°C or °F), monerod's CPU, memory, how busy the chain's drive is, and disk free. | J · Computer |
-| CONTROLS | A clock of the short bans, each ring draining as its time runs out. | E · Controls |
+| BANS | A clock of the short bans, each ring draining as its time runs out. | E · Ban list |
 | LOG | Lanes of what happened in the last hour, with the newest typed out underneath. | I · Log |
 
 | Panel | Shows |
@@ -45,7 +45,7 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 | B · Chain | Height, how long since the last block (and how unusual that wait is), the last 60 blocks drawn as a timeline, average gap, blocks replaced, network hashrate. |
 | C · Peer scope | Every connection as a dot. Peers from the same company's servers stack at the same angle, so a spy cluster shows up as a pile-up. Distance from the middle is how long it's been connected. |
 | D · Route | How the node is connected: other nodes, the network link it's bound to (a VPN, if you use one), your node, Tor and the dashboard. |
-| E · Controls | Ban or unban a range in two clicks, with the ranges at the eclipse limits listed. Every action asks you to type a word first. |
+| E · Ban list | What your node is banning now, and the ranges at the eclipse limits. Read-only: banning is left to `monerod`'s own console. |
 | F · Traffic | Download and upload now, and the last 15 minutes. |
 | G · History | Connections, mempool and traffic over 15 min, 1 h, 6 h or 24 h, kept for 24 h. |
 | H · Mempool | Transactions waiting, how long they've waited, double spends. |
@@ -61,8 +61,8 @@ them; they still update with every reading.
 **Privacy mode.** The PRIVACY switch at the top hides addresses, ports, names,
 folders and transaction ids behind a glitch, and shows every clock in UTC, so the
 screens can be shown to other people or put in a screenshot. The hiding happens in the
-app's server, so the real values never reach the window. Changes to the node are off
-while it's on, and turning it off asks you to type SHOW.
+app's server, so the real values never reach the window. Turning it off asks you to
+type SHOW.
 
 **Black marble watch.** A black marble flood is one sender making a great many
 outputs so that other people's wallets pick theirs as decoys: every decoy they
@@ -216,26 +216,16 @@ sensor is read), but that hasn't been tested yet.
 
 ## Commands
 
-**COMMANDS** at the top opens every `monerod` console command, grouped and
-searchable: `status`, `print_cn`, `print_pl`, `sync_info`, `print_pool`,
-`print_block`, `print_tx`, `bans`, `ban`, `unban`, `out_peers`, `limit`,
-`flush_txpool`, `set_log`, `pop_blocks`, `prune_blockchain` and the rest. Each
-one has a form for its arguments and draws the node's answer as tables (the
-raw answer is one click away). It also shows the last lines of `monerod`'s
-log.
+**COMMANDS** at the top opens `monerod`'s read-only console commands, grouped
+and searchable: `status`, `print_cn`, `print_pl`, `sync_info`, `print_pool`,
+`print_block`, `print_tx`, `bans`, `limit` and the rest, 26 in all. Each one
+has a form for its arguments and draws the node's answer as tables (the raw
+answer is one click away). It also shows the last lines of `monerod`'s log.
 
-Commands that change something ask you to type a word first (BAN, UNBAN,
-PEERS, FLUSH and so on), so a stray key press can't set one off. A few have
-a safety limit the console doesn't:
-
-- Bans only take public addresses, ranges no wider than `a.b.x.x`, and never a
-  range holding your node's own address. `monerod` keeps bans in memory, so a
-  ban lasts until it runs out or the node restarts.
-- `print_bc` and `pop_blocks` take at most 1,000 blocks at a time.
-
-Panel E has the two you'll use most, ban and unban, with the ranges at the
-eclipse limits ready to ban in two clicks. Settings → Controls can turn all
-change commands off; reading always works.
+The console commands that change something (`ban`, `unban`, `out_peers`,
+`flush_txpool`, `stop_daemon` and so on) aren't there, and neither are the
+RPC methods they send. To ban a peer, use `monerod`'s own console. `print_bc`
+takes at most 1,000 blocks at a time (the console has no limit).
 
 ## Reads beyond RPC
 
@@ -265,11 +255,12 @@ it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer
   app's own server on `127.0.0.1`, and that server answers only requests
   carrying a key that is new at every start and that only the window gets. A
   browser, or any other program or user on the computer, is turned away.
-- It only sends the RPC requests `monerod`'s own console commands send, plus
-  four read-only ones for the panels. Anything else is refused before a
-  request is made.
-- Every change also needs a header only its own screens send, and requests
-  from web pages are refused.
+- It only reads. Every RPC method it can send is on one list in
+  `memstara/rpc.py`, each a read, and anything else is refused before a
+  request is made. A test fails if one of `monerod`'s methods that change
+  something is ever added to that list (`tests/test_safety.py`).
+- Requests that save its own settings or run a command also need a header
+  only its own screens send, and requests from web pages are refused.
 - The window makes no requests to the internet and can't go to any other
   address. Fonts are bundled. Camera, microphone, location, downloads, pop-up
   windows and WebGL are all off.
@@ -282,7 +273,7 @@ it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer
 ## For developers
 
 - `docs/DESIGN.md`: the data contract between the server and the screens,
-  the RPC calls and why, alert rules, local reads, controls and
+  the RPC calls and why, alert rules, local reads, commands and
   settings.
 - `docs/STYLE.md`: look and wording rules.
 - `memstara/`: the server (Python standard library only) and the app window

@@ -134,9 +134,6 @@ class Poller:
         self.history = History(self.state_dir / "history.json" if self.state_dir else None)
         self.history.load(self.clock())
         self._source_key = None
-        self._reread = _MethodSet()
-        self._protected = None        # None until the first poll has worked it out
-        self._own_known = False       # the node's own --p2p-bind-ip addresses were read (it was found)
         self._reset_source()
         snap = self._starting_snapshot()
         snap["seq"] = 0
@@ -188,21 +185,6 @@ class Poller:
 
     def wake(self):
         self._wake.set()
-
-    def reread(self, methods=("get_bans", "get_limit")):
-        """After a change command: read these slow readings again on the next poll, which starts now."""
-        self._reread.add(methods)
-        self._wake.set()
-
-    def protected_addresses(self):
-        """Addresses `ban` must never cover, as (ip, where from): the node's own --p2p-bind-ip
-        addresses ("node"). None until the first poll has filled it in."""
-        return None if self._protected is None else list(self._protected)
-
-    def own_address_known(self) -> bool:
-        """Whether the node's own --p2p-bind-ip addresses could be read (local reads on and the
-        node found on this computer)."""
-        return self._own_known
 
     def node_elsewhere(self) -> bool:
         """Whether the last read of this computer found the node running on another one."""
@@ -480,8 +462,6 @@ class Poller:
             except RpcError:
                 parts["sync"] = None
         # ---- slow readings
-        for method in self._reread.pop_all():
-            self.slow_at.pop(method, None)   # a change command just ran: read these again now
         for method, every in SLOW_CALLS.items():
             if method in ("get_bans",) and restricted:
                 continue
@@ -852,11 +832,6 @@ class Poller:
         })
         lamps = self.lamps.build(rows, now)
 
-        # ---- addresses `ban` must never cover
-        own = [(ip, "node") for ip in (found or {}).get("p2p_bind") or []]
-        self._protected = own
-        self._own_known = found is not None
-
         # ---- history
         comp = (host or {}).get("computer") or {}
         proc = (host or {}).get("proc") or {}
@@ -913,23 +888,6 @@ class Poller:
             "events": [],
             "hist": None,
         }
-
-
-class _MethodSet:
-    """A small thread-safe set: the web server adds, the poller takes everything."""
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._items: set = set()
-
-    def add(self, items):
-        with self._lock:
-            self._items.update(items)
-
-    def pop_all(self) -> list:
-        with self._lock:
-            out, self._items = sorted(self._items), set()
-        return out
 
 
 def _own(res) -> bool:

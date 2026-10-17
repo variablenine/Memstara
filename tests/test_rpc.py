@@ -1,4 +1,5 @@
-"""The RPC client: the allowlists and the write path, Digest login, plain-language errors."""
+"""The RPC client: the read-only list, Digest login, plain-language errors (the list itself is
+checked against monerod's change calls in test_safety.py)."""
 
 from __future__ import annotations
 
@@ -10,7 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import helpers  # noqa: F401  (sets up sys.path)
 from fake_monerod import FakeMonerod
 from memstara import rpc
-from memstara.rpc import READ_ALLOWED, WRITE_ALLOWED, RpcClient, RpcError, RpcNotAllowed
+from memstara.rpc import READ_ALLOWED, RpcClient, RpcError, RpcNotAllowed
+from test_safety import CHANGE_METHODS
 
 # core_rpc_server.h, v0.18.5.3: JSON-RPC methods (on /json_rpc) and plain paths
 MONEROD_JSON_RPC = {
@@ -29,16 +31,12 @@ MONEROD_PATHS = {
     "get_info", "get_net_stats", "get_limit", "set_limit", "out_peers", "in_peers", "get_outs", "update",
     "pop_blocks"}
 
-# methods monerod has but no console command (and not the poller) sends: never allowed
+# methods monerod has that Memstara never sends (besides the ones that change something)
 NEVER = ["submit_block", "submitblock", "generateblocks", "calc_pow", "add_aux_pow", "get_block_template",
          "send_raw_transaction", "sendrawtransaction", "get_outs", "rpc_access_pay",
          "rpc_access_submit_nonce", "rpc_access_tracking", "rpc_access_account", "get_public_nodes",
          "get_alt_blocks_hashes", "get_txpool_backlog", "get_miner_data", "getinfo", "getheight",
          "start_save_graph", "", None, 42]
-# methods that change something: only call_write() sends them
-WRITE_METHODS = ["set_bans", "stop_daemon", "out_peers", "in_peers", "set_limit", "relay_tx", "flush_txpool",
-                 "set_log_level", "set_log_categories", "set_log_hash_rate", "start_mining", "stop_mining",
-                 "pop_blocks", "update", "set_bootstrap_daemon", "prune_blockchain", "flush_cache", "save_bc"]
 
 
 class _Odd(BaseHTTPRequestHandler):
@@ -70,14 +68,11 @@ class AllowlistTest(unittest.TestCase):
     def tearDown(self):
         self.fake.stop()
 
-    def test_write_methods_refused_without_any_request(self):
+    def test_refused_without_any_request(self):
         client = RpcClient(self.fake.url, timeout=2)
-        for m in WRITE_METHODS + NEVER:
+        for m in sorted(CHANGE_METHODS) + NEVER:
             with self.assertRaises(RpcNotAllowed, msg=repr(m)):
                 client.call(m)
-        for m in NEVER:
-            with self.assertRaises(RpcNotAllowed, msg=repr(m)):
-                client.call_write(m)
         self.assertEqual(self.fake.calls, [], "a refused method must never reach the node")
 
     def test_refused_before_connecting(self):
@@ -87,46 +82,16 @@ class AllowlistTest(unittest.TestCase):
             client.call("set_bans", {"bans": [{"host": "100.64.0.1", "ban": True}]})
         self.assertEqual(cm.exception.kind, "not_allowed")
 
-    def test_allowlists(self):
-        self.assertEqual(set(WRITE_ALLOWED), set(WRITE_METHODS))
-        self.assertFalse(set(READ_ALLOWED) & set(WRITE_ALLOWED))
+    def test_endpoints(self):
         for m in NEVER:
             self.assertNotIn(m, READ_ALLOWED)
-            self.assertNotIn(m, WRITE_ALLOWED)
         # each endpoint is where monerod v0.18.5.3 maps the method (core_rpc_server.h)
-        for m, ep in list(READ_ALLOWED.items()) + list(WRITE_ALLOWED.items()):
+        for m, ep in READ_ALLOWED.items():
             if m in MONEROD_JSON_RPC:
                 self.assertEqual(ep, "/json_rpc", m)
             else:
                 self.assertIn(m, MONEROD_PATHS, m)
                 self.assertEqual(ep, "/" + m, m)
-
-    def test_write_path_only_for_the_commands_module(self):
-        client = RpcClient(self.fake.url, timeout=2)
-        ban = {"bans": [{"host": "77.88.100.0/24", "ip": 0, "ban": True, "seconds": 3600}]}
-        # call() never sends set_bans, and call_write() refuses anyone but memstara.commands
-        with self.assertRaises(RpcNotAllowed):
-            client.call("set_bans", ban)
-        for module in ("tests", "memstara.control", "memstara.server", "memstara.poller"):
-            ns = {"__name__": module}
-            exec("def go(c, m, p=None):\n    return c.call_write(m, p)\n", ns)
-            with self.assertRaises(RpcNotAllowed, msg=module) as cm:
-                ns["go"](client, "set_bans", ban)
-            self.assertIn("confirmed command", cm.exception.summary)
-        # even from the commands module, only WRITE_ALLOWED goes out through call_write
-        ns = {"__name__": "memstara.commands"}
-        exec("def go(c, m, p=None):\n    return c.call_write(m, p)\n", ns)
-        for m in NEVER + list(READ_ALLOWED):
-            with self.assertRaises(RpcNotAllowed, msg=repr(m)):
-                ns["go"](client, m)
-        self.assertEqual(self.fake.calls, [], "nothing refused reaches the node")
-        self.assertEqual(ns["go"](client, "set_bans", ban)["status"], "OK")
-        self.assertEqual(self.fake.requests, [("set_bans", ban)])
-
-    def test_only_commands_py_uses_the_write_path(self):
-        users = sorted(p.name for p in (helpers.ROOT / "memstara").rglob("*.py")
-                       if "call_write(" in p.read_text() and p.name != "rpc.py")
-        self.assertEqual(users, ["commands.py"])
 
     def test_every_allowed_method_answers(self):
         client = RpcClient(self.fake.url, timeout=5)

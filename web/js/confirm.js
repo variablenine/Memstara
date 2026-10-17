@@ -1,6 +1,6 @@
-// The confirm step for anything that changes the node: a dialog that only
-// goes ahead once a word has been typed, so a stray key press can't set
-// one off. The typed word is sent along and the server checks it again.
+// The confirm step for turning privacy mode off: a dialog that only goes
+// ahead once a word has been typed, so a stray key press can't set it off.
+// The typed word is sent along and the server checks it again.
 import { $, setText, setData } from "./dom.js";
 
 let pending = null;

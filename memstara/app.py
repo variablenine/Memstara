@@ -29,7 +29,7 @@ class App:
         sdir = Path(state_dir) if state_dir is not None else default_state_dir()
         self.poller = Poller(settings, clock=clock, state_dir=sdir, log=self.log,
                              host_reader=host_reader, discover=discover, node_log=node_log)
-        self.commands = Commands(settings, self.poller, self.log)
+        self.commands = Commands(settings, self.log)
         self.web_dir = Path(web_dir)
         self.static = build_static_map(self.web_dir)
         self.privacy = Redactor()   # privacy mode's tokens (server.py uses it while display.privacy is on)

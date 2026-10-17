@@ -16,10 +16,10 @@ import chain from "./chain.js";
 import mempool from "./mempool.js";
 import traffic from "./traffic.js";
 import computer from "./computer.js";
-import controls from "./controls.js";
+import bans from "./bans.js";
 import log from "./log.js";
 
-const MODULES = { status, network, chain, mempool, traffic, computer, controls, log };
+const MODULES = { status, network, chain, mempool, traffic, computer, bans, log };
 const heroes = new Map();   // key -> {api, shown}
 const inView = new Map();   // key -> on screen (unknown counts as yes)
 let lastShownFn = () => false;

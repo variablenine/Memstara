@@ -242,42 +242,19 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(alerts_by_id(snap)["restarts"]["text"], "Node restarted 3 times in the last hour")
         self.assertEqual([e["kind"] for e in snap["events"]].count("restart"), 3)
 
-    def test_change_command_through_the_api(self):
+    def test_commands_through_the_api_only_read(self):
         rig = self.rig
         rig.poll(0)
         st, out = get_json(rig.port, "/api/commands")
         self.assertEqual(st, 200)
-        n_bans = rig.fake.calls.count("get_bans")
-        body = {"name": "ban", "args": {"hosts": "77.88.100.x", "seconds": 3600}, "confirm": " ban "}
+        self.assertNotIn("ban", [c["name"] for c in out["commands"]])
+        n = len(rig.fake.calls)
+        body = {"name": "ban", "args": {"hosts": "77.88.100.x", "seconds": 3600}, "confirm": "BAN"}
         st, _, raw = request(rig.port, "POST", "/api/command", body, headers=WRITE)
-        out = json.loads(raw)
-        self.assertEqual(st, 200, out)
-        self.assertEqual(out["message"], "Banned 77.88.100.x for 1 hour. Connections from it were dropped.")
-        st, _, raw = request(rig.port, "POST", "/api/command",
-                             {"name": "limit_up", "args": {"kbps": 1000}, "confirm": "LIMIT"}, headers=WRITE)
-        self.assertEqual(st, 200, raw)
-        snap = rig.poll(5)            # well inside get_bans' 60 s: re-read because a change command ran
-        self.assertEqual(rig.fake.calls.count("get_bans"), n_bans + 1)
-        self.assertIn({"host": "77.88.100.0/24", "seconds": 3600}, snap["node"]["ban_list"])
-        self.assertEqual(snap["node"]["limit_up"], 1000 * 1024)
-        control = [e for e in snap["events"] if e["kind"] == "control"]
-        self.assertEqual([e["text"] for e in control], ["Set limit-up to 1000 kB/s", out["message"]])
-        self.assertIn("command ban: " + out["message"], rig.logs)
-        # the node's own address (--p2p-bind-ip, found from its flags) can't be banned
-        rig.discover.found[0]["p2p_bind"] = ["33.44.7.7", "2001:db8::7"]
-        rig.poll(DISCOVER_EVERY_S)
-        self.assertEqual(rig.app.poller.protected_addresses(), [("33.44.7.7", "node"), ("2001:db8::7", "node")])
-        st, _, raw = request(rig.port, "POST", "/api/command",
-                             {"name": "ban", "args": {"hosts": "8.8.8.8\n33.44.x.x"}, "confirm": "BAN"}, headers=WRITE)
-        self.assertEqual(st, 400)
-        self.assertEqual(json.loads(raw)["error"], "33.44.x.x holds this computer's own public address (the node "
-                                                   "is bound to it with --p2p-bind-ip), so banning it would cut "
-                                                   "your node off.")
-        self.assertEqual(rig.fake.set_bans_seen[-1]["bans"][0]["host"], "77.88.100.0/24", "nothing sent")
-        # without local reads the guard only knows non-public addresses
-        rig.settings.update({"local.enabled": False})
-        rig.poll()
-        self.assertEqual(rig.app.poller.protected_addresses(), [])
+        self.assertEqual(st, 404, raw)
+        self.assertEqual(rig.fake.calls[n:], [], "nothing reached the node")
+        st, _, raw = request(rig.port, "POST", "/api/command", {"name": "bans"}, headers=WRITE)
+        self.assertEqual((st, json.loads(raw)["calls"]), (200, ["get_bans"]))
 
 
 class RestrictedTest(unittest.TestCase):
@@ -430,10 +407,7 @@ class LocalReadsTest(unittest.TestCase):
         rig = self.rig
         rig.settings.update({"local.enabled": False})
         rig.write_log(log_line(rig.clock(), "ERROR", "not read"))
-        self.assertIsNone(rig.app.poller.protected_addresses(), "`ban` waits for the first poll")
         snap = rig.poll(0)
-        self.assertEqual(rig.app.poller.protected_addresses(), [])
-        self.assertFalse(rig.app.poller.own_address_known(), "the node's --p2p-bind-ip wasn't read")
         snap = rig.poll(30)
         self.assertIsNone(snap["host"])
         self.assertEqual(rig.host.reads, [])
@@ -444,7 +418,6 @@ class LocalReadsTest(unittest.TestCase):
         self.assertNotIn("log", [e["kind"] for e in snap["events"]])
         rig.settings.update({"local.enabled": True})
         self.assertEqual(rig.poll()["host"]["computer"]["cores"], 8)
-        self.assertTrue(rig.app.poller.own_address_known())
 
     def test_log_events(self):
         rig = self.rig
@@ -476,7 +449,6 @@ class LocalReadsTest(unittest.TestCase):
         self.assertFalse(snap["host"]["ok"])
         self.assertEqual(snap["host"]["remote"]["where"], "node.lan:18081")
         self.assertEqual(rig.discover.calls, 0, "no process here to find")
-        self.assertFalse(rig.app.poller.own_address_known())
         self.assertTrue(rig.app.poller.node_elsewhere())
         notes = [e for e in snap["events"] if e["kind"] == "source" and "Reading" not in e["text"]]
         self.assertEqual([e["level"] for e in notes], ["warn", "warn", "info"], "newest first")

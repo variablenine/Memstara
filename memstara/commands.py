@@ -1,15 +1,13 @@
-"""Every monerod console command, run through monerod's RPC exactly as the console does.
+"""monerod's read-only console commands, run through monerod's RPC exactly as the console does.
 
-One entry per command in monerod's console (names, aliases and usage from
+One entry per read-only command in monerod's console (names, aliases and usage from
 src/daemon/command_server.cpp, v0.18.5.3). Each entry lists the RPC calls its
 executor makes (src/daemon/rpc_command_executor.cpp) and sends the same request
-fields. The console itself is a thin wrapper around these RPC methods, so the
-dashboard can read and change exactly what the console can, and nothing more.
+fields. Every one of those calls is on rpc.READ_ALLOWED, so no command here can
+change anything on the node; check_registry() and the tests make sure of it.
 
 Arguments are checked before anything is sent. A few commands have a safety limit
-the console doesn't have; each one says so in its `help`. Commands that change
-something need a typed confirm word and `controls.enabled`. Only this module may
-send the RPC methods on rpc.WRITE_ALLOWED (RpcClient.call_write checks the caller).
+the console doesn't have; each one says so in its `help`.
 """
 
 from __future__ import annotations
@@ -17,39 +15,17 @@ from __future__ import annotations
 import ipaddress
 import re
 import sys
-import threading
 import time
 
-from .host import canon_ip
-from .rpc import READ_ALLOWED, WRITE_ALLOWED, RpcClient, RpcError, RpcNotAllowed
+from .rpc import READ_ALLOWED, RpcClient, RpcError, RpcNotAllowed
 
 LONG_TIMEOUT_S = 120
-P2P_IP_BLOCKTIME = 86400          # monerod's own bans, and the console's default for `ban`
 HF_VERSION_PER_BYTE_FEE = 8       # cryptonote_config.h
 WHITE_LIMIT, GRAY_LIMIT = 1000, 5000   # P2P_LOCAL_WHITE/GRAY_PEERLIST_LIMIT
-MAX_BAN_LINES = 256
-MAX_LIMIT_KBPS = 10_000_000
-# ban: said on the form and in the answer when the node's --p2p-bind-ip couldn't be read
-OWN_UNCHECKED = ("The node's own address (its --p2p-bind-ip) couldn't be checked, because local reads are off, "
-                 "the node runs on another computer, or the running node wasn't found on this computer. Make "
-                 "sure you don't ban it.")
 
 HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
 INT_RE = re.compile(r"^[+-]?\d{1,20}$")
-B58 = set("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
-HOST_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-                     r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$")
-LOG_CATEGORIES_RE = re.compile(r"^[A-Za-z0-9*:,+\-._]{1,500}$")
 CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
-
-# ranges a ban may never cover: not public, so banning them could cut the node off
-# from this computer itself, a VPN, or the local network (fixed list, so the answer is
-# the same on every Python version)
-NOT_PUBLIC = [ipaddress.IPv4Network(n) for n in (
-    "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
-    "192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15",
-    "198.51.100.0/24", "203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4")]
-
 
 class CommandError(Exception):
     def __init__(self, status: int, error: str, field: str | None = None):
@@ -79,73 +55,6 @@ def check_block(v: str):
     raise ArgError("type a block height or a 64-character block hash")
 
 
-def range_label(host: str) -> str:
-    """203.0.113.0/24 -> 203.0.113.x, 203.0.0.0/16 -> 203.0.x.x."""
-    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)\.(\d+)/(\d+)", host or "")
-    if not m:
-        return host
-    if m.group(5) == "24":
-        return "%s.%s.%s.x" % m.group(1, 2, 3)
-    if m.group(5) == "16":
-        return "%s.%s.x.x" % m.group(1, 2)
-    return host
-
-
-def parse_range(text) -> tuple[str, ipaddress.IPv4Network]:
-    """One ban target -> (host as monerod gets it, network).
-
-    Accepts a.b.c.d, a.b.c.x (/24), a.b.x.x (/16) and a.b.c.d/N with 16 <= N <= 32
-    (host bits are cleared). IPv4 only. Refuses anything that isn't a public address.
-    """
-    t = str(text or "").strip().lower().replace(".*", ".x")
-    if not t:
-        raise ArgError("type an address or a range")
-    prefix = 32
-    if "/" in t:
-        t, p = t.split("/", 1)
-        if not re.fullmatch(r"\d{1,2}", p):
-            raise ArgError("after the / goes a number from 16 to 32")
-        prefix = int(p)
-    elif t.endswith(".x.x"):
-        prefix, t = 16, t[:-4] + ".0.0"
-    elif t.endswith(".x"):
-        prefix, t = 24, t[:-2] + ".0"
-    parts = t.split(".")
-    if len(parts) != 4 or any(not re.fullmatch(r"\d{1,3}", x) or int(x) > 255 for x in parts):
-        raise ArgError("%s isn't an IPv4 address or range (a.b.c.d, a.b.c.x, a.b.x.x or a.b.c.d/16 to /32)"
-                       % _short(text))
-    if prefix < 16:
-        raise ArgError("ranges wider than a.b.x.x (/16, 65,536 addresses) aren't allowed")
-    if prefix > 32:
-        raise ArgError("after the / goes a number from 16 to 32")
-    net = ipaddress.IPv4Network("%s/%d" % (".".join(str(int(x)) for x in parts), prefix), strict=False)
-    if (any(net.overlaps(n) for n in NOT_PUBLIC) or not net.network_address.is_global
-            or not net.broadcast_address.is_global):
-        raise ArgError("%s isn't a public address (private, local, shared or reserved), so banning it "
-                       "could cut the node off from your own machines" % _label(net))
-    host = str(net.network_address) if prefix == 32 else str(net)
-    return host, net
-
-
-def _label(net: ipaddress.IPv4Network) -> str:
-    return range_label(str(net.network_address) if net.prefixlen == 32 else str(net))
-
-
-def check_ip_or_range(v: str) -> str:
-    """unban: an address or range as monerod lists it (IPv4, IPv4/N or IPv6)."""
-    t = v.strip()
-    try:
-        if "/" in t:
-            return str(ipaddress.IPv4Network(t, strict=True))
-        if t.startswith("[") and t.endswith("]"):
-            ipaddress.IPv6Address(t[1:-1])
-            return t
-        ipaddress.ip_address(t)
-        return t
-    except ValueError:
-        raise ArgError("type an address or range exactly as the ban list shows it")
-
-
 def check_ip(v: str) -> str:
     t = v.strip()
     try:
@@ -156,71 +65,6 @@ def check_ip(v: str) -> str:
     except ValueError:
         raise ArgError("type one IPv4 or IPv6 address")
     return t
-
-
-def check_monero_address(v: str) -> str:
-    t = v.strip()
-    if not t or not set(t) <= B58:
-        raise ArgError("that isn't a Monero address")
-    if len(t) == 106:
-        raise ArgError("use your standard address (95 characters, starts with 4), not an integrated one")
-    if len(t) != 95:
-        raise ArgError("a Monero address has 95 characters")
-    if t[0] in "8B7":
-        raise ArgError("monerod can't mine to a subaddress yet: use your main address (starts with 4)")
-    if t[0] not in "49A5":
-        raise ArgError("that isn't a Monero address (main addresses start with 4)")
-    return t
-
-
-def check_threads(v: str):
-    t = v.strip().lower()
-    if t in ("auto", "autodetect"):
-        return 0
-    if re.fullmatch(r"\d{1,3}", t) and 1 <= int(t) <= 256:
-        return int(t)
-    raise ArgError("type auto or a number from 1 to 256")
-
-
-def _host_port(v: str, need_port: bool) -> str:
-    t = v.strip()
-    host, port = t, None
-    if t.startswith("["):
-        m = re.fullmatch(r"\[([0-9A-Fa-f:.]+)\](?::(\d{1,5}))?", t)
-        if not m:
-            raise ArgError("type host:port")
-        try:
-            ipaddress.IPv6Address(m.group(1))
-        except ValueError:
-            raise ArgError("that IPv6 address isn't valid")
-        port = m.group(2)
-    else:
-        if t.count(":") == 1:
-            host, port = t.split(":")
-        if not HOST_RE.match(host):
-            raise ArgError("type host:port (a name or an IP address)")
-    if port is not None and not (port.isdigit() and 1 <= int(port) <= 65535):
-        raise ArgError("the port must be 1 to 65535")
-    if need_port and port is None:
-        raise ArgError("add the port: host:port")
-    return t
-
-
-def check_bootstrap(v: str) -> str:
-    t = v.strip()
-    if t in ("auto", "none"):
-        return t
-    return _host_port(t, need_port=False)
-
-
-def check_proxy(v: str) -> str:
-    return _host_port(v, need_port=True)
-
-
-def check_categories(v: str) -> str:
-    if not LOG_CATEGORIES_RE.match(v):
-        raise ArgError("use letters, digits and * : , + - . _ only, for example *:WARNING,net:INFO")
-    return v
 
 
 # ---------------------------------------------------------------- registry
@@ -235,41 +79,29 @@ def P(name, label, type_, *, required=False, min_=None, max_=None, choices=None,
 
 
 class Command:
-    def __init__(self, fn, name, *, group, title, summary, usage, calls, kind="read", confirm=None, warn=None,
-                 params=(), aliases=(), long=False, read_when=None, pre=None):
+    def __init__(self, fn, name, *, group, title, summary, usage, calls, params=(), aliases=(), long=False,
+                 pre=None):
         self.fn = fn
-        self.pre = pre   # checks across arguments, before any confirm word or call
+        self.pre = pre   # checks across arguments, before any call
         self.name = name
         self.group = group
         self.title = title
         self.summary = summary
         self.usage = usage
         self.calls = list(calls)
-        self.kind = kind
-        self.confirm = confirm
-        self.warn = warn
         self.params = list(params)
         self.aliases = list(aliases)
         self.long = long
-        self.read_when = read_when or {}   # {param: value}: with these arguments it only reads
 
     def public(self) -> dict:
         return {"name": self.name, "aliases": self.aliases, "group": self.group, "title": self.title,
-                "summary": self.summary, "usage": self.usage, "kind": self.kind, "confirm": self.confirm,
-                "warn": self.warn, "read_when": self.read_when or None, "calls": self.calls,
+                "summary": self.summary, "usage": self.usage, "calls": self.calls,
                 "params": [{k: v for k, v in p.items() if not k.startswith("_")} for p in self.params]}
-
-    def changes(self, args: dict) -> bool:
-        if self.kind != "change":
-            return False
-        if self.read_when and all(args.get(k) == v for k, v in self.read_when.items()):
-            return False
-        return True
 
 
 REGISTRY: dict = {}
 ALIASES: dict = {}
-GROUPS = ["Node", "Chain", "Transactions", "Network", "Bans", "Mining", "Logs"]
+GROUPS = ["Node", "Chain", "Transactions", "Network", "Bans", "Mining"]
 
 
 def command(name, **kw):
@@ -333,18 +165,6 @@ def span(seconds) -> str:
     h, s = divmod(s, 3600)
     m, s = divmod(s, 60)
     return "%dd %dh %dm %ds" % (d, h, m, s)
-
-
-def for_how_long(seconds: int) -> str:
-    if seconds % 86400 == 0 and seconds >= 2 * 86400:
-        return "%d days" % (seconds // 86400)
-    if seconds % 3600 == 0:
-        h = seconds // 3600
-        return "1 hour" if h == 1 else "%d hours" % h
-    if seconds % 60 == 0:
-        m = seconds // 60
-        return "1 minute" if m == 1 else "%d minutes" % m
-    return "1 second" if seconds == 1 else "%s seconds" % _n(seconds)
 
 
 def human_bytes(n) -> str:
@@ -446,38 +266,6 @@ def _sync_info(c, a):
     dl = sum((p.get("info") or {}).get("current_download") or 0 for p in peers)
     return "Height: %d, target: %d (%.1f%%) · downloading at %d kB/s · %d peers · %d spans" % (
         h, t, (100.0 * h / t) if t else 0, dl, len(peers), len(r.get("spans") or []))
-
-
-@command("save", group="Node", title="Save the blockchain", usage="save",
-         summary="Writes the blockchain to disk now.", kind="change", confirm="SAVE",
-         calls=["save_bc"], long=True)
-def _save(c, a):
-    c.call("save_bc")
-    return "Blockchain saved"
-
-
-@command("stop_daemon", group="Node", title="Stop the node", usage="stop_daemon", aliases=["exit"],
-         summary="Stops monerod.", kind="change", confirm="STOP", calls=["stop_daemon"],
-         warn="Stops the node. If a service or script restarts it automatically, it comes back on its own.")
-def _stop_daemon(c, a):
-    c.call("stop_daemon")
-    return "Stop signal sent"
-
-
-@command("update", group="Node", title="Check for an update", usage="update (check|download)",
-         summary="Asks monerod whether a newer release exists, or downloads it.", kind="change",
-         confirm="DOWNLOAD", calls=["update"], long=True, read_when={"command": "check"},
-         warn="Download only: monerod saves the release file, it doesn't install it.",
-         params=[P("command", "What to do", "choice", required=True, default="check",
-                   choices=[("check", "Check only"), ("download", "Download")])])
-def _update(c, a):
-    r = c.call("update", {"command": a["command"], "path": ""})
-    if not r.get("update"):
-        return "No update available"
-    msg = "Update available: v%s: %s, hash %s" % (r.get("version"), r.get("user_uri"), r.get("hash"))
-    if a["command"] == "download":
-        msg += (". Downloaded to: %s" % r.get("path")) if r.get("path") else ". Download failed"
-    return msg
 
 
 # ---- Chain
@@ -626,36 +414,6 @@ def _output_histogram(c, a):
     return "%d amount%s" % (n, "" if n == 1 else "s")
 
 
-@command("check_blockchain_pruning", group="Chain", title="Is the chain pruned?",
-         usage="check_blockchain_pruning", summary="Whether this node keeps a pruned blockchain.",
-         calls=["prune_blockchain"])
-def _check_pruning(c, a):
-    r = c.call("prune_blockchain", {"check": True})
-    return "Blockchain is pruned" if r.get("pruning_seed") else "Blockchain is not pruned"
-
-
-@command("pop_blocks", group="Chain", title="Remove the newest blocks", usage="pop_blocks <nblocks>",
-         summary="Removes blocks from the end of the blockchain.", kind="change", confirm="POP",
-         calls=["pop_blocks"], long=True,
-         warn="Removes the newest blocks; the node downloads them again.",
-         params=[P("count", "Blocks to remove", "int", required=True, min_=1, max_=1000,
-                   help_="1 to 1,000 (dashboard limit).")])
-def _pop_blocks(c, a):
-    r = c.call("pop_blocks", {"nblocks": a["count"]})
-    return "new height: %s" % r.get("height")
-
-
-@command("prune_blockchain", group="Chain", title="Prune the blockchain", usage="prune_blockchain [confirm]",
-         summary="Prunes the blockchain (keeps about a third of the old data).", kind="change", confirm="PRUNE",
-         calls=["prune_blockchain"], long=True,
-         warn="Permanent: going back to a full chain means downloading it all again. Pruning from inside "
-              "monerod doesn't shrink the database file; freed parts are reused instead. It runs inside "
-              "monerod for a long time; the dashboard stops waiting after 120 s.")
-def _prune(c, a):
-    c.call("prune_blockchain", {"check": False})
-    return "Blockchain pruned"
-
-
 # ---- Transactions
 
 @command("print_tx", group="Transactions", title="One transaction", usage="print_tx <transaction_hash> [+hex] [+json]",
@@ -715,25 +473,6 @@ def _pool_stats(c, a):
     c.call("get_info")
     return "%s transactions, %s bytes, %s double spends" % (
         _n(ps.get("txs_total") or 0), _n(ps.get("bytes_total") or 0), _n(ps.get("num_double_spends") or 0))
-
-
-@command("relay_tx", group="Transactions", title="Relay a transaction", usage="relay_tx <txid>",
-         summary="Sends a transaction from the pool to the network again.", kind="change", confirm="RELAY",
-         calls=["relay_tx"],
-         params=[P("txid", "Transaction id", "text", required=True, check=check_hash, maxlen=64)])
-def _relay_tx(c, a):
-    c.call("relay_tx", {"txids": [a["txid"]]})
-    return "Transaction successfully relayed"
-
-
-@command("flush_txpool", group="Transactions", title="Flush the pool", usage="flush_txpool [<txid>]",
-         summary="Removes one transaction from the pool, or all of them.", kind="change", confirm="FLUSH",
-         calls=["flush_txpool"], long=True,
-         params=[P("txid", "Transaction id", "text", check=check_hash, maxlen=64,
-                   placeholder="empty = the whole pool")])
-def _flush_txpool(c, a):
-    c.call("flush_txpool", {"txids": [a["txid"]] if a["txid"] else []})
-    return "Pool successfully flushed"
 
 
 # ---- Network
@@ -802,108 +541,11 @@ def _print_net_stats(c, a):
     return "; ".join(out)
 
 
-_KBPS_HELP = "kB/s. -1 puts back the default. Empty only reads the limit. Lasts until the node restarts."
-
-
-def _limit(c, a, down: bool, up: bool):
-    k = a["kbps"]
-    if k is None:
-        r, verb = c.call("get_limit"), "is"
-    else:
-        r, verb = c.call("set_limit", {"limit_down": k if down else 0, "limit_up": k if up else 0}), "set to"
-    parts = (["limit-down %s %s kB/s" % (verb, r.get("limit_down"))] if down else []) + \
-            (["limit-up %s %s kB/s" % (verb, r.get("limit_up"))] if up else [])
-    msg = ", ".join(parts)
-    return ("Set " + msg.replace(" set to", " to")) if k is not None else msg
-
-
-def check_kbps(v: int) -> int:
-    if v == 0:
-        raise ArgError("0 changes nothing: use -1 for the default, or leave it empty to just see the limit")
-    return v
-
-
-def _kbps_param():
-    return P("kbps", "Limit", "int", min_=-1, max_=MAX_LIMIT_KBPS, placeholder="empty = show it",
-             help_=_KBPS_HELP, check=check_kbps)
-
-
-@command("limit", group="Network", title="Bandwidth limits", usage="limit [<kB/s>]",
-         summary="Shows or sets both the download and upload limit.", kind="change", confirm="LIMIT",
-         calls=["get_limit", "set_limit"], read_when={"kbps": None}, params=[_kbps_param()])
-def _limit_both(c, a):
-    return _limit(c, a, True, True)
-
-
-@command("limit_up", group="Network", title="Upload limit", usage="limit_up [<kB/s>]",
-         summary="Shows or sets the upload limit.", kind="change", confirm="LIMIT",
-         calls=["get_limit", "set_limit"], read_when={"kbps": None}, params=[_kbps_param()])
-def _limit_up(c, a):
-    return _limit(c, a, False, True)
-
-
-@command("limit_down", group="Network", title="Download limit", usage="limit_down [<kB/s>]",
-         summary="Shows or sets the download limit.", kind="change", confirm="LIMIT",
-         calls=["get_limit", "set_limit"], read_when={"kbps": None}, params=[_kbps_param()])
-def _limit_down(c, a):
-    return _limit(c, a, True, False)
-
-
-def _peers(c, a, which):
-    m = a["max"]
-    r = c.call(which, {"set": m is not None, which: m if m is not None else 0})
-    n = r.get(which)
-    s = "unlimited" if n == 2 ** 32 - 1 else str(n)
-    return ("Max number of %s peers set to %s" if m is not None else "Max number of %s peers is %s") % (
-        which.split("_")[0], s)
-
-
-def _peers_param(which):
-    return P("max", "Most %s peers" % which, "int", min_=0, max_=1000, placeholder="empty = show it",
-             help_="0 to 1,000 (dashboard limit). Empty only reads it. Lasts until the node restarts, "
-                   "when its --out-peers / --in-peers flag (or monerod's default) applies again.")
-
-
-@command("out_peers", group="Network", title="Outgoing peers", usage="out_peers <max_number>",
-         summary="Sets (or shows) the most outgoing connections.", kind="change", confirm="PEERS",
-         calls=["out_peers"], read_when={"max": None}, params=[_peers_param("outgoing")])
-def _out_peers(c, a):
-    return _peers(c, a, "out_peers")
-
-
-@command("in_peers", group="Network", title="Incoming peers", usage="in_peers <max_number>",
-         summary="Sets (or shows) the most incoming connections.", kind="change", confirm="PEERS",
-         calls=["in_peers"], read_when={"max": None}, params=[_peers_param("incoming")])
-def _in_peers(c, a):
-    return _peers(c, a, "in_peers")
-
-
-def _bootstrap_pre(a):
-    addr, user, pw, proxy = a["address"], a["username"] or "", a["password"] or "", a["proxy"] or ""
-    if addr in ("auto", "none") and (user or pw):
-        raise ArgError("a user and password only go with host:port", "username")
-    if bool(user) != bool(pw):
-        raise ArgError("give both the user and the password, or neither", "password" if user else "username")
-    if addr == "none" and proxy:
-        raise ArgError("no proxy with none", "proxy")
-
-
-@command("set_bootstrap_daemon", group="Network", title="Bootstrap node",
-         usage="set_bootstrap_daemon (auto | none | host[:port] [username] [password]) [proxy_ip:proxy_port]",
-         summary="A remote node that wallets using yours are sent to while yours is still syncing.",
-         kind="change", confirm="BOOTSTRAP", calls=["set_bootstrap_daemon"], pre=_bootstrap_pre,
-         warn="Wallets using your node get sent to that node while yours syncs.",
-         params=[P("address", "Address", "text", required=True, check=check_bootstrap, maxlen=260,
-                   placeholder="auto, none or host:port"),
-                 P("username", "User", "text", maxlen=100, help_="Only with host:port."),
-                 P("password", "Password", "text", maxlen=200, help_="Only with host:port."),
-                 P("proxy", "Proxy", "text", check=check_proxy, maxlen=100, placeholder="ip:port",
-                   help_="Not with none.")])
-def _bootstrap(c, a):
-    addr, user, pw, proxy = a["address"], a["username"] or "", a["password"] or "", a["proxy"] or ""
-    c.call("set_bootstrap_daemon", {"address": "" if addr == "none" else addr, "username": user,
-                                    "password": pw, "proxy": proxy})
-    return "Successfully set bootstrap daemon address to %s" % ("none" if addr == "none" else addr)
+@command("limit", group="Network", title="Bandwidth limits", usage="limit",
+         summary="The node's download and upload limits.", calls=["get_limit"])
+def _limit(c, a):
+    r = c.call("get_limit")
+    return "limit-down is %s kB/s, limit-up is %s kB/s" % (r.get("limit_down"), r.get("limit_up"))
 
 
 # ---- Bans
@@ -925,51 +567,6 @@ def _banned(c, a):
     return "%s is not banned" % a["address"]
 
 
-@command("ban", group="Bans", title="Ban", usage="ban [<IP>|@<filename>] [<seconds>]",
-         summary="Refuses an address or range (and drops its connections) for a while.", kind="change",
-         confirm="BAN", calls=["set_bans"],
-         params=[P("hosts", "Addresses or ranges", "lines", required=True, maxlen=4000,
-                   placeholder="203.0.113.x\n198.51.0.0/16",
-                   help_="One per line, like the console's @file: a.b.c.d, a.b.c.x, a.b.x.x or a.b.c.d/16 to /32. "
-                         "Refused (dashboard limit): IPv6, non-public addresses, ranges wider than /16, and "
-                         "ranges holding the node's own address (--p2p-bind-ip) or one an add-on protects."),
-                 P("seconds", "For (seconds)", "int", min_=1, max_=31_536_000, default=P2P_IP_BLOCKTIME,
-                   help_="1 s to 1 year, default 24 h. monerod keeps bans only in memory. Bans last until they "
-                         "run out or the node restarts; bans from --ban-list and the DNS blocklist come back "
-                         "when it starts.")])
-def _ban(c, a):
-    hosts = a["hosts"]
-    secs = a["seconds"]
-    c.call("set_bans", {"bans": [{"host": h, "ip": 0, "ban": True, "seconds": secs} for h in hosts]})
-    what = range_label(hosts[0]) if len(hosts) == 1 else "%d addresses or ranges" % len(hosts)
-    return "Banned %s for %s. Connections from %s were dropped." % (
-        what, for_how_long(secs), "it" if len(hosts) == 1 else "them")
-
-
-@command("unban", group="Bans", title="Unban", usage="unban <address>",
-         summary="Lifts a ban on an address or range.", kind="change", confirm="UNBAN", calls=["set_bans"],
-         params=[P("address", "Address or range", "text", required=True, check=check_ip_or_range, maxlen=60,
-                   help_="Exactly as the ban list shows it, for example 203.0.113.0/24.")])
-def _unban(c, a):
-    c.call("set_bans", {"bans": [{"host": a["address"], "ip": 0, "ban": False, "seconds": 0}]})
-    return "Lifted any ban on %s." % range_label(a["address"])
-
-
-def _flush_cache_pre(a):
-    if not a["bad_blocks"]:
-        raise ArgError("pick a cache to flush (bad blocks is the only one)", "bad_blocks")
-
-
-@command("flush_cache", group="Bans", title="Flush a cache", usage="flush_cache [bad-txs] [bad-blocks]",
-         summary="Forgets the blocks monerod marked as bad, so it can accept them again.", kind="change",
-         confirm="FLUSH", calls=["flush_cache"], pre=_flush_cache_pre,
-         params=[P("bad_blocks", "Bad blocks", "bool", default=True,
-                   help_="The only cache monerod v0.18.5 can flush.")])
-def _flush_cache(c, a):
-    c.call("flush_cache", {"bad_blocks": True})
-    return "Bad-blocks cache flushed"
-
-
 # ---- Mining
 
 @command("mining_status", group="Mining", title="Mining status", usage="mining_status",
@@ -981,68 +578,7 @@ def _mining_status(c, a):
     return "Mining at %s with %s threads" % (hash_speed(m.get("speed")), m.get("threads_count"))
 
 
-@command("start_mining", group="Mining", title="Start mining",
-         usage="start_mining <addr> [<threads>|auto] [do_background_mining] [ignore_battery]",
-         summary="Mines on the node's computer, paying to an address.", kind="change", confirm="MINE",
-         calls=["start_mining"],
-         params=[P("address", "Pay to", "text", required=True, check=check_monero_address, maxlen=106,
-                   help_="Your standard Monero address. Subaddresses don't work in monerod; integrated "
-                         "addresses and OpenAlias names aren't taken here (dashboard limit)."),
-                 P("threads", "Threads", "text", check=check_threads, maxlen=10, default="1",
-                   placeholder="auto or 1-256"),
-                 P("background", "Only when the computer is idle", "bool", default=False),
-                 P("ignore_battery", "Also on battery", "bool", default=False)])
-def _start_mining(c, a):
-    c.call("start_mining", {"miner_address": a["address"], "threads_count": a["threads"],
-                            "do_background_mining": a["background"], "ignore_battery": a["ignore_battery"]})
-    return "Mining started in daemon"
-
-
-@command("stop_mining", group="Mining", title="Stop mining", usage="stop_mining", summary="Stops mining.",
-         kind="change", confirm="STOP", calls=["stop_mining"])
-def _stop_mining(c, a):
-    c.call("stop_mining")
-    return "Mining stopped in daemon"
-
-
-@command("show_hr", group="Mining", title="Show hash rate", usage="show_hr",
-         summary="Starts writing the hash rate to monerod's log (only while mining).", kind="change",
-         confirm="HR", calls=["set_log_hash_rate"])
-def _show_hr(c, a):
-    c.call("set_log_hash_rate", {"visible": True})
-    return "Hash rate logging is on"
-
-
-@command("hide_hr", group="Mining", title="Hide hash rate", usage="hide_hr",
-         summary="Stops writing the hash rate to monerod's log.", kind="change", confirm="HR",
-         calls=["set_log_hash_rate"])
-def _hide_hr(c, a):
-    c.call("set_log_hash_rate", {"visible": False})
-    return "Hash rate logging is off"
-
-
-# ---- Logs
-
-def _set_log_pre(a):
-    if (a["level"] is None) == (a["categories"] is None):
-        raise ArgError("give a level or categories (one of the two)", "level")
-
-
-@command("set_log", group="Logs", title="Log level", usage="set_log <level>|<{+,-,}categories>",
-         summary="How much monerod writes to its log: a level 0-4, or categories.", kind="change",
-         confirm="LOG", calls=["set_log_level", "set_log_categories"], pre=_set_log_pre,
-         params=[P("level", "Level", "int", min_=0, max_=4, placeholder="0-4"),
-                 P("categories", "Or categories", "text", check=check_categories, maxlen=500,
-                   placeholder="*:WARNING,net.p2p:INFO", help_="Starting with + or - adds or removes.")])
-def _set_log(c, a):
-    if a["level"] is not None:
-        c.call("set_log_level", {"level": a["level"]})
-        return "Log level is now %d" % a["level"]
-    r = c.call("set_log_categories", {"categories": a["categories"]})
-    return "Log categories are now %s" % _short(r.get("categories"), 300)
-
-
-@command("rpc_payments", group="Logs", title="RPC payments", usage="rpc_payments",
+@command("rpc_payments", group="Mining", title="RPC payments", usage="rpc_payments",
          summary="Clients paying for this node's RPC with mining (if RPC payment is on).",
          calls=["rpc_access_data"])
 def _rpc_payments(c, a):
@@ -1084,23 +620,6 @@ def _coerce(p: dict, v):
         if not isinstance(v, str) or v not in allowed:
             raise ArgError("must be one of: %s" % ", ".join(allowed))
         return v
-    if t == "lines":
-        if isinstance(v, str):
-            items = v.splitlines()
-        elif isinstance(v, list) and all(isinstance(x, str) for x in v):
-            items = list(v)
-        else:
-            raise ArgError("must be text, one item per line")
-        if sum(len(x) for x in items) > p["_maxlen"]:
-            raise ArgError("is too long")
-        out = []
-        for line in items:
-            line = line.split("#", 1)[0].strip()   # like the console's @file: # starts a comment
-            if line:
-                if CONTROL_CHARS.search(line):
-                    raise ArgError("has characters that aren't allowed")
-                out.append(line)
-        return out
     # text
     if not isinstance(v, str):
         raise ArgError("must be text")
@@ -1113,7 +632,7 @@ def _coerce(p: dict, v):
 
 
 def _empty(v) -> bool:
-    return v is None or (isinstance(v, str) and not v.strip()) or (isinstance(v, list) and not v)
+    return v is None or (isinstance(v, str) and not v.strip())
 
 
 def validate_args(cmd: Command, args) -> dict:
@@ -1141,10 +660,6 @@ def validate_args(cmd: Command, args) -> dict:
                 v = p["_check"](v)
         except ArgError as e:
             raise CommandError(400, "%s: %s." % (p["label"], e), name)
-        if p["type"] == "lines" and not v:
-            if p["required"]:
-                raise CommandError(400, "%s is needed." % p["label"], name)
-            v = None
         out[name] = v
     if cmd.pre is not None:
         try:
@@ -1160,44 +675,9 @@ def _sentence(s: str) -> str:
     return (s[:1].upper() + s[1:]).rstrip(".") + "."
 
 
-def _ban_hosts(lines: list, own: list) -> list:
-    """ban: every line -> the host monerod gets, refusing what the dashboard won't ban.
-
-    own: addresses never to ban, as (ip, where it comes from) or plain ip strings: the
-    node's own --p2p-bind-ip addresses and those add-ons protect (Poller.protected_addresses)."""
-    if len(lines) > MAX_BAN_LINES:
-        raise CommandError(400, "Addresses or ranges: at most %d lines at once." % MAX_BAN_LINES, "hosts")
-    hosts, nets = [], []
-    for line in lines:
-        try:
-            host, net = parse_range(line)
-        except ArgError as e:
-            raise CommandError(400, "Addresses or ranges: %s." % e, "hosts")
-        for item in own:
-            ip, src = item if isinstance(item, tuple) else (item, None)
-            try:
-                inside = ipaddress.IPv4Address(canon_ip(ip)) in net   # ::ffff:a.b.c.d is a.b.c.d
-            except ValueError:
-                continue
-            if inside:
-                raise CommandError(400, "%s holds this computer's own public address (%s), so banning it "
-                                        "would cut your node off." % (_label(net), _own_from(src)), "hosts")
-        if host not in hosts:
-            hosts.append(host)
-            nets.append(net)
-    return hosts
-
-
-def _own_from(src) -> str:
-    if src == "node":
-        return "the node is bound to it with --p2p-bind-ip"
-    if src:
-        return "from the %s add-on" % src
-    return "the dashboard was told so"
-
-
 class _Ctx:
-    """What a command may do: only the RPC calls its entry lists. Results are kept by method."""
+    """What a command may do: only the RPC calls its entry lists, all of them reads. Results are kept
+    by method."""
 
     def __init__(self, client: RpcClient, cmd: Command):
         self.client = client
@@ -1209,10 +689,7 @@ class _Ctx:
         if method not in self.allowed:
             raise RpcNotAllowed(method, "%s isn't one of this command's calls, so it was not sent" % method)
         self.calls.append(method)
-        if method in WRITE_ALLOWED:
-            res = self.client.call_write(method, params)
-        else:
-            res = self.client.call(method, params)
+        res = self.client.call(method, params)
         if keep:
             self.result[method] = res
         return res
@@ -1221,23 +698,14 @@ class _Ctx:
 class Commands:
     """GET /api/commands and POST /api/command."""
 
-    def __init__(self, settings, poller=None, log=None):
+    def __init__(self, settings, log=None):
         self.settings = settings
-        self.poller = poller
         self.log = log or (lambda msg: print(msg, file=sys.stderr))
-        self._change_lock = threading.Lock()
 
     def listing(self) -> dict:
         order = {g: i for i, g in enumerate(GROUPS)}
         cmds = sorted(REGISTRY.values(), key=lambda c: order.get(c.group, 99))
-        notes = {} if self._own_known() else {"ban": OWN_UNCHECKED}
-        out = []
-        for c in cmds:
-            pub = c.public()
-            if c.name in notes:
-                pub["warn"] = (pub["warn"] + " " + notes[c.name]) if pub["warn"] else notes[c.name]
-            out.append(pub)
-        return {"commands": out}
+        return {"commands": [c.public() for c in cmds]}
 
     def run(self, body: dict) -> tuple[int, dict]:
         try:
@@ -1255,38 +723,12 @@ class Commands:
         alias = name if name in ALIASES else None
         cmd = REGISTRY.get(ALIASES.get(name, name))
         if cmd is None:
-            raise CommandError(404, "There's no monerod command called %s." % _short(name, 40), "name")
+            raise CommandError(404, "There's no read-only monerod command called %s." % _short(name, 40), "name")
         raw_args = body.get("args")
         if alias == "print_pool_sh" and isinstance(raw_args, (dict, type(None))):
             raw_args = dict(raw_args or {})
             raw_args.setdefault("short", True)
-        args = validate_args(cmd, raw_args)
-        if cmd.name == "ban":
-            own = self.poller.protected_addresses() if self.poller is not None else []
-            args["hosts"] = _ban_hosts(args["hosts"], own or [])
-            if own is None:   # before the first poll
-                raise CommandError(409, "The dashboard hasn't finished its first look at the node yet, so it "
-                                        "can't check which addresses are this computer's own. Try again in a "
-                                        "few seconds.")
-        changes = cmd.changes(args)
-        if changes:
-            if self.settings.get("display.privacy") is True:
-                raise CommandError(403, "Privacy mode is on. Turn it off to change anything on the node.")
-            if not self.settings.get("controls.enabled"):
-                raise CommandError(403, "Change commands are turned off in settings (Allow change commands).")
-            word = body.get("confirm")
-            if not isinstance(word, str) or word.strip().upper() != cmd.confirm:
-                raise CommandError(400, "Type %s to confirm." % cmd.confirm, "confirm")
-            if not self._change_lock.acquire(blocking=False):
-                raise CommandError(409, "Another change command is still running. Try again when it's done.")
-            try:
-                return self._execute(cmd, args, True)
-            finally:
-                self._change_lock.release()
-        return self._execute(cmd, args, False)
-
-    def _own_known(self) -> bool:
-        return self.poller is None or self.poller.own_address_known()
+        return self._execute(cmd, validate_args(cmd, raw_args))
 
     def _client(self, cmd: Command) -> RpcClient:
         v = self.settings.values()
@@ -1296,7 +738,7 @@ class Commands:
         except ValueError:
             raise CommandError(502, "The node's RPC address in settings isn't valid.")
 
-    def _execute(self, cmd: Command, args: dict, changes: bool) -> dict:
+    def _execute(self, cmd: Command, args: dict) -> dict:
         ctx = _Ctx(self._client(cmd), cmd)
         try:
             message = cmd.fn(ctx, args)
@@ -1307,32 +749,18 @@ class Commands:
             self.log("command %s: refused an RPC call: %s" % (cmd.name, e.summary))
             raise CommandError(500, "The dashboard refused to send that call (a bug in the command list).")
         except RpcError as e:
-            if changes:
-                self.log("command %s failed: %s" % (cmd.name, e.summary))
             raise CommandError(502, e.summary)
-        if cmd.name == "ban" and message and not self._own_known():
-            message += " " + OWN_UNCHECKED
-        out = {"ok": True, "name": cmd.name, "calls": ctx.calls, "result": ctx.result,
-               "args": {k: ("" if k == "password" and v else v) for k, v in args.items()}}
+        out = {"ok": True, "name": cmd.name, "calls": ctx.calls, "result": ctx.result, "args": args}
         if message:
             out["message"] = _short(message, 2000)
-        if changes:
-            text = _short(message or "%s done" % cmd.name, 200)
-            self.log("command %s: %s" % (cmd.name, text))
-            if self.poller is not None:
-                self.poller.add_event("control", text, "info")
-                self.poller.reread(("get_bans", "get_limit"))
         return out
 
 
 def check_registry() -> list:
-    """Problems with the registry against the RPC allowlists (empty when all is well)."""
+    """Problems with the registry against the RPC allowlist (empty when all is well)."""
     problems = []
-    allowed = set(READ_ALLOWED) | set(WRITE_ALLOWED)
     for cmd in REGISTRY.values():
         for c in cmd.calls:
-            if c not in allowed:
-                problems.append("%s calls %s, which isn't allowlisted" % (cmd.name, c))
-        if cmd.kind == "change" and not cmd.confirm:
-            problems.append("%s changes something but has no confirm word" % cmd.name)
+            if c not in READ_ALLOWED:
+                problems.append("%s calls %s, which isn't on the read-only list" % (cmd.name, c))
     return problems

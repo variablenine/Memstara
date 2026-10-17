@@ -35,11 +35,10 @@ export const api = {
   saveSettings: (values) => request("PUT", "/api/settings", { values }),
   resetSection: (section) => request("POST", "/api/settings/reset", { section }),
   testConnection: (body) => request("POST", "/api/test-connection", body),
-  // monerod's console commands. A change command carries the word the person
-  // typed in the confirm dialog; the server checks it too.
+  // monerod's read-only console commands
   commands: () => request("GET", "/api/commands"),
+  command: (name, args = {}) => request("POST", "/api/command", { name, args }),
   discover: () => request("GET", "/api/discover", undefined, true),
-  command: (name, args = {}, confirm) => request("POST", "/api/command", confirm ? { name, args, confirm } : { name, args }),
   nodeLog: (source, lines) => request("GET", `/api/node-log?source=${encodeURIComponent(source)}&lines=${encodeURIComponent(lines)}`, undefined, true),
   // privacy mode: on at once; off only with the word typed in the confirm step (SHOW)
   privacy: (on, confirm) => request("POST", "/api/privacy", confirm ? { on, confirm } : { on }),

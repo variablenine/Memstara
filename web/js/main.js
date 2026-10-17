@@ -19,9 +19,9 @@ import { renderSystem, setSystemSettings } from "./panels/system.js";
 import { initFlood, renderFlood, setFloodSettings } from "./panels/flood.js";
 import { renderEvents } from "./panels/events.js";
 import { initComputer, renderComputer, seedComputer, recordComputer } from "./panels/computer.js";
-import { initControls, renderControls, setControlSettings } from "./panels/controls.js";
+import { initBans, renderBans, setBanSettings } from "./panels/bans.js";
 import { initConfirm } from "./confirm.js";
-import { initCommands, openCommands, commandsOpen, setCommandSettings } from "./commands.js";
+import { initCommands, openCommands, commandsOpen } from "./commands.js";
 import { initSettings, loadSettings, savedValues, openSettings, isOpen } from "./settings.js";
 import { runBoot } from "./boot.js";
 import { initTabs, selectScreen, setLayout, screenShown, screenOf, flagScreens, SCREENS } from "./tabs.js";
@@ -108,8 +108,7 @@ function applySettings(v) {
   setPeerSettings(v);
   setSystemSettings(v);
   setFloodSettings(v);
-  setControlSettings(v);
-  setCommandSettings(v);
+  setBanSettings(v);
   setLayout(v["display.layout"]);
   const motion = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "reduced" : (v["display.motion"] || "full");
   setPrivacyMotion(motion);
@@ -138,7 +137,7 @@ function draw(snap) {
   panel("flood", () => renderFlood(snap));
   panel("events", () => renderEvents(snap));
   panel("computer", () => renderComputer(snap));
-  panel("controls", () => renderControls(snap));
+  panel("bans", () => renderBans(snap));
   guard("tooltip", refreshTip);   // details left open on a lamp, a row or a dot move with the rest
 }
 
@@ -251,7 +250,7 @@ async function follow() {
   }
 }
 
-// something just changed (a command, saved settings): the server reads the node again at
+// settings were just saved: the server reads the node again at
 // once and its answer comes on the open request; this only cuts short a pause after an error
 function refresh() {
   if (state.wake) state.wake();
@@ -331,8 +330,8 @@ async function start() {
   initComputer();
   initFlood();
   initConfirm();
-  initCommands({ changed: () => refresh() });
-  initControls({ changed: () => refresh(), openCommands: () => openCommands() });
+  initCommands();
+  initBans({ openCommands: () => openCommands() });
   initSettings({
     onApply: (v) => applySettings(v),
     onSaved: (v) => { applySettings(v); refresh(); refreshHistory(); },

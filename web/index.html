@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="css/heroes/mempool.css">
   <link rel="stylesheet" href="css/heroes/traffic.css">
   <link rel="stylesheet" href="css/heroes/computer.css">
-  <link rel="stylesheet" href="css/heroes/controls.css">
+  <link rel="stylesheet" href="css/heroes/bans.css">
   <link rel="stylesheet" href="css/heroes/log.css">
   <link rel="stylesheet" href="css/privacy.css">
   <script type="module" src="js/main.js"></script>
@@ -85,7 +85,7 @@
     <button class="tab" type="button" role="tab" id="tab-mempool" aria-controls="screen-mempool" aria-selected="false" tabindex="-1" data-tab="mempool"><span class="tab-n" aria-hidden="true">04</span><span class="tab-label">MEMPOOL</span><span class="tab-flag" aria-hidden="true"></span></button>
     <button class="tab" type="button" role="tab" id="tab-traffic" aria-controls="screen-traffic" aria-selected="false" tabindex="-1" data-tab="traffic"><span class="tab-n" aria-hidden="true">05</span><span class="tab-label">TRAFFIC</span><span class="tab-flag" aria-hidden="true"></span></button>
     <button class="tab" type="button" role="tab" id="tab-computer" aria-controls="screen-computer" aria-selected="false" tabindex="-1" data-tab="computer"><span class="tab-n" aria-hidden="true">06</span><span class="tab-label">COMPUTER</span><span class="tab-flag" aria-hidden="true"></span></button>
-    <button class="tab" type="button" role="tab" id="tab-controls" aria-controls="screen-controls" aria-selected="false" tabindex="-1" data-tab="controls"><span class="tab-n" aria-hidden="true">07</span><span class="tab-label">CONTROLS</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-bans" aria-controls="screen-bans" aria-selected="false" tabindex="-1" data-tab="bans"><span class="tab-n" aria-hidden="true">07</span><span class="tab-label">BANS</span><span class="tab-flag" aria-hidden="true"></span></button>
     <button class="tab" type="button" role="tab" id="tab-log" aria-controls="screen-log" aria-selected="false" tabindex="-1" data-tab="log"><span class="tab-n" aria-hidden="true">08</span><span class="tab-label">LOG</span><span class="tab-flag" aria-hidden="true"></span></button>
   </nav>
 
@@ -479,51 +479,37 @@
       </section>
       </div>
     </section>
-    <section class="screen" id="screen-controls" role="tabpanel" aria-labelledby="tab-controls" data-screen="controls" tabindex="-1">
-      <div class="grid" id="grid-controls">
-      <section class="panel hero span-2" data-hero="controls" id="p-hero-controls" aria-labelledby="h-hero-controls">
+    <section class="screen" id="screen-bans" role="tabpanel" aria-labelledby="tab-bans" data-screen="bans" tabindex="-1">
+      <div class="grid" id="grid-bans">
+      <section class="panel hero span-2" data-hero="bans" id="p-hero-bans" aria-labelledby="h-hero-bans">
         <header class="ph">
           <span class="pid">07</span>
-          <h2 id="h-hero-controls">BANS</h2>
-          <span class="psub" id="hero-controls-sub">—</span>
-          <span class="ph-tools" id="hero-controls-tools"></span>
+          <h2 id="h-hero-bans">BAN CLOCK</h2>
+          <span class="psub" id="hero-bans-sub">—</span>
+          <span class="ph-tools" id="hero-bans-tools"></span>
         </header>
-        <div class="pb hero-body" id="hero-controls"></div>
+        <div class="pb hero-body" id="hero-bans"></div>
       </section>
-      <section class="panel span-1" data-panel="controls" id="p-controls" aria-labelledby="h-controls">
+      <section class="panel span-1" data-panel="bans" id="p-bans" aria-labelledby="h-bans">
         <header class="ph">
           <span class="pid">E</span>
-          <h2 id="h-controls">CONTROLS</h2>
-          <span class="psub" id="controls-sub" title="monerod RPC: set_bans, get_bans (the console's ban and unban)">MONEROD'S OWN BAN AND UNBAN · EACH ONE ASKS YOU TO CONFIRM</span>
+          <h2 id="h-bans">BAN LIST</h2>
+          <span class="psub" id="bans-sub" title="monerod RPC: get_bans (the console's bans)">WHAT YOUR NODE IS BANNING · READ-ONLY</span>
         </header>
         <div class="pb">
-          <p class="ctl-off" id="ctl-off" hidden>CONTROLS ARE TURNED OFF · SETTINGS → CONTROLS</p>
-          <p class="ctl-off" id="ctl-private" hidden>PRIVACY MODE IS ON · BANS AND UNBANS ARE OFF UNTIL IT'S TURNED OFF</p>
-          <div class="ctl-block" id="ctl-ban">
-            <div class="ctl-title">BAN A RANGE</div>
-            <div class="ctl-row">
-              <label class="sr-only" for="ban-host">Address or range to ban</label>
-              <input class="ctl-input" id="ban-host" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" placeholder="203.0.113.x">
-              <div class="seg-ctl" role="radiogroup" aria-label="How long" id="ban-hours">
-                <button type="button" role="radio" data-h="1">1 H</button>
-                <button type="button" role="radio" data-h="6">6 H</button>
-                <button type="button" role="radio" data-h="24" aria-checked="true">24 H</button>
-              </div>
-              <button class="btn" type="button" id="ban-go">BAN…</button>
-            </div>
-            <p class="ctl-hint" id="ban-hint">x.x.x.x for one address, a.b.c.x for its block of 256, a.b.x.x for 65,536.</p>
-            <div class="ctl-sub">FLAGGED NOW</div>
-            <ul class="ctl-list" id="ban-flagged"></ul>
-          </div>
           <div class="ctl-block">
             <div class="ctl-title">BANNED · 24 H OR LESS LEFT</div>
             <ul class="ctl-list" id="ban-list"></ul>
             <p class="ctl-hint" id="ban-long"></p>
           </div>
-          <div class="ctl-row ctl-foot">
-            <button class="btn" type="button" id="ctl-all">ALL MONEROD COMMANDS</button>
+          <div class="ctl-block">
+            <div class="ctl-title">AT THE LIMITS NOW</div>
+            <ul class="ctl-list" id="ban-flagged"></ul>
+            <p class="ctl-hint">Too many connections from one company's servers (the ECLIPSE lamps). Memstara only reads, so it can't ban them; monerod's own console can (ban and unban).</p>
           </div>
-          <p class="ctl-msg" id="ctl-msg" role="status" aria-live="polite"></p>
+          <div class="ctl-row ctl-foot">
+            <button class="btn" type="button" id="ban-all">ALL READ-ONLY COMMANDS</button>
+          </div>
         </div>
       </section>
       </div>
@@ -597,7 +583,7 @@
     </div>
   </aside>
 
-  <!-- Confirm step for anything that changes the node: needs a typed word, so a stray key press can't set one off -->
+  <!-- Confirm step for turning privacy mode off: needs a typed word, so a stray key press can't set it off -->
   <dialog class="confirm" id="confirm" aria-labelledby="cf-title">
     <h2 id="cf-title">—</h2>
     <p class="cf-body" id="cf-body"></p>

@@ -1,14 +1,12 @@
-// Command drawer: every monerod console command, with a form for its
-// arguments and its answer drawn as tables. The list comes from the server
-// (GET /api/commands), so it always matches what the server will run.
-// Commands that change something go through the typed-word confirm step.
-import { $, el, clear, setText, setData } from "./dom.js";
+// Command drawer: monerod's read-only console commands, with a form for their
+// arguments and their answers drawn as tables. The list comes from the server
+// (GET /api/commands), so it always matches what the server will run. None of
+// them changes anything on the node.
+import { $, el, clear, setText } from "./dom.js";
 import { api } from "./api.js";
-import { askConfirm } from "./confirm.js";
 import * as f from "./fmt.js";
-import { isPrivate } from "./privacy.js";
 
-const GROUPS = ["Node", "Chain", "Transactions", "Network", "Bans", "Mining", "Logs"];
+const GROUPS = ["Node", "Chain", "Transactions", "Network", "Bans", "Mining"];
 // the one log file: monerod's own
 function logViews() {
   return [
@@ -19,20 +17,16 @@ function logViews() {
 const SKIP_KEYS = new Set(["status", "untrusted", "credits", "top_hash", "id", "jsonrpc"]);
 const MAX_ROWS = 500;
 
-let list = null, current = "status", lastFocus = null, onChanged = () => {};
-let enabled = true;
+let list = null, current = "status", lastFocus = null;
 const drafts = {};          // per command: argument values typed so far
 const answers = {};         // per command: last answer {at, data} or {at, error}
 
-export function setCommandSettings(v) { enabled = v?.["controls.enabled"] !== false; }
-
-export function initCommands({ changed } = {}) {
-  onChanged = changed || onChanged;
+export function initCommands() {
   $("open-commands").addEventListener("click", () => openCommands());
   $("close-commands").addEventListener("click", close);
   $("cmd-scrim").addEventListener("click", close);
   $("commands").addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !$("confirm").open) { e.preventDefault(); close(); }
+    if (e.key === "Escape") { e.preventDefault(); close(); }
     if (e.key === "Tab") trapTab(e);
   });
   $("cmd-find").addEventListener("input", drawList);
@@ -61,19 +55,7 @@ export async function openCommands(name) {
 
 export function commandsOpen() { return !$("commands").hidden; }
 
-// the server's description of one command (null until the list has loaded)
-export async function commandInfo(name) {
-  if (!list) {
-    try {
-      const r = await api.commands();
-      list = (Array.isArray(r?.commands) ? r.commands : []).concat(logViews());
-    } catch { return null; }
-  }
-  return list.find((c) => c.name === name) || null;
-}
-
 function close() {
-  if ($("confirm").open) return;
   $("cmd-scrim").hidden = true;
   $("commands").hidden = true;
   if (lastFocus && lastFocus.focus) lastFocus.focus();
@@ -109,7 +91,6 @@ function drawList() {
       shown++;
       box.append(el("button", { type: "button", "data-name": c.name, "aria-current": String(c.name === current), onclick: () => select(c.name) },
         el("span", { class: "cmd-t", text: c.title || c.name }),
-        c.kind === "change" ? el("span", { class: "cmd-chg", text: "CHANGES", title: "Changes something on the node" }) : null,
         el("span", { class: "cmd-n", text: c.name.startsWith("log:") ? "file" : c.name })));
     }
   }
@@ -123,7 +104,7 @@ function select(name) {
   for (const b of $("cmd-list").querySelectorAll("button")) b.setAttribute("aria-current", String(b.dataset.name === c.name));
   drawCommand(c);
   const needs = (c.params || []).some((p) => p.required);
-  if ((c.kind === "file" || !changesWith(c, argsFor(c))) && !needs && !answers[c.name]) run(c);
+  if (!needs && !answers[c.name]) run(c);
 }
 
 // ---- one command ---------------------------------------------------------
@@ -136,9 +117,6 @@ function drawCommand(c) {
     el("span", { class: "cmd-kind", id: "cmd-kind" }));
   main.append(head);
   if (c.summary) main.append(el("p", { class: "set-intro", text: c.summary }));
-  if (c.warn) main.append(el("p", { class: "cmd-warn", text: "▲ " + c.warn }));
-  if (c.kind === "change" && !enabled) main.append(el("p", { class: "cmd-warn", text: "▲ Change commands are turned off in Settings → Controls. Reading still works." }));
-  else if (c.kind === "change" && isPrivate()) main.append(el("p", { class: "cmd-warn", text: "▲ Privacy mode is on, so commands that change something are off until it's turned off. Reading still works, with private details hidden." }));
 
   const params = c.kind === "file" ? logParams() : (c.params || []);
   const d = (drafts[c.name] ||= defaults(params));
@@ -147,33 +125,14 @@ function drawCommand(c) {
     for (const p of params) form.append(paramField(c, p, d));
     main.append(form);
   }
-  const runBtn = el("button", { type: "button", id: "cmd-run", onclick: () => run(c) });
+  const runBtn = el("button", { type: "button", id: "cmd-run", class: "btn btn-primary", onclick: () => run(c) });
+  setText(runBtn, c.kind === "file" ? "READ IT" : "RUN");
   main.append(el("div", { class: "set-actions" }, runBtn, el("span", { class: "cmd-calls", text: c.calls?.length ? "RPC · " + c.calls.join(" · ") : "" })));
   main.append(el("div", { class: "cmd-out", id: "cmd-out", role: "status", "aria-live": "polite" }));
-  refreshRun(c);
+  const tag = $("cmd-kind");
+  tag.dataset.kind = c.kind === "file" ? "file" : "read";
+  setText(tag, "READS ONLY");
   drawAnswer(c);
-}
-
-// Some change commands only read with certain arguments (limit with no
-// number, update check); the server lists those as read_when.
-function changesWith(c, args) {
-  if (c.kind !== "change") return false;
-  const rw = c.read_when;
-  if (rw && Object.entries(rw).every(([k, v]) => (args[k] ?? null) === v)) return false;
-  return true;
-}
-
-// the run button and the READS / CHANGES tag follow the arguments as typed
-function refreshRun(c) {
-  const btn = $("cmd-run"), tag = $("cmd-kind");
-  if (!btn || current !== c.name) return;
-  const changes = changesWith(c, argsFor(c));
-  btn.className = "btn " + (changes ? "btn-danger" : "btn-primary");
-  setText(btn, changes ? "RUN…" : c.kind === "file" ? "READ IT" : "RUN");
-  btn.disabled = changes && (!enabled || isPrivate());
-  tag.dataset.kind = changes ? "change" : c.kind === "file" ? "file" : "read";
-  setText(tag, changes ? `CHANGES SOMETHING · TYPE ${c.confirm || "?"} TO CONFIRM`
-    : c.kind === "change" ? "READS ONLY WITH THESE SETTINGS" : "READS ONLY");
 }
 
 function logParams() {
@@ -200,7 +159,7 @@ function paramField(c, p, d) {
     const cb = el("input", { type: "checkbox", id });
     cb.checked = !!d[p.name];
     const state = el("span", { text: cb.checked ? "YES" : "NO" });
-    cb.addEventListener("change", () => { d[p.name] = cb.checked; setText(state, cb.checked ? "YES" : "NO"); refreshRun(c); });
+    cb.addEventListener("change", () => { d[p.name] = cb.checked; setText(state, cb.checked ? "YES" : "NO"); });
     input = el("label", { class: "toggle", for: id }, cb, el("span", { class: "tg" }), state);
   } else if (p.type === "choice") {
     top.append(el("span", { class: "flabel", id: id + "-l", text: p.label }));
@@ -208,21 +167,15 @@ function paramField(c, p, d) {
     for (const ch of p.choices || []) {
       const r = el("input", { type: "radio", name: id, value: String(ch.value) });
       r.checked = String(d[p.name]) === String(ch.value);
-      r.addEventListener("change", () => { if (r.checked) d[p.name] = ch.value; refreshRun(c); });
+      r.addEventListener("change", () => { if (r.checked) d[p.name] = ch.value; });
       input.append(el("label", {}, r, String(ch.label ?? ch.value)));
     }
-  } else if (p.type === "lines") {
-    top.append(el("label", { for: id, text: p.label }));
-    const ta = el("textarea", { id, rows: 4, spellcheck: "false", placeholder: p.placeholder || "", class: "ctl-input cmd-lines" });
-    ta.value = d[p.name] ?? "";
-    ta.addEventListener("input", () => { d[p.name] = ta.value; refreshRun(c); });
-    input = el("div", { class: "finput" }, ta);
   } else {
     top.append(el("label", { for: id, text: p.label + (p.required ? "" : " (optional)") }));
     const isNum = p.type === "int";
-    const inp = el("input", { id, type: isNum ? "number" : /password/i.test(p.name) ? "password" : "text", spellcheck: "false", autocomplete: "off", placeholder: p.placeholder || "", min: p.min, max: p.max, step: isNum ? 1 : undefined, inputmode: isNum ? "numeric" : undefined });
+    const inp = el("input", { id, type: isNum ? "number" : "text", spellcheck: "false", autocomplete: "off", placeholder: p.placeholder || "", min: p.min, max: p.max, step: isNum ? 1 : undefined, inputmode: isNum ? "numeric" : undefined });
     inp.value = d[p.name] ?? "";
-    inp.addEventListener("input", () => { d[p.name] = inp.value; refreshRun(c); });
+    inp.addEventListener("input", () => { d[p.name] = inp.value; });
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); run(c); } });
     input = el("div", { class: "finput" }, inp, p.unit ? el("span", { class: "funit", text: p.unit }) : null);
   }
@@ -246,23 +199,6 @@ function argsFor(c) {
 async function run(c) {
   if (c.kind === "file") return readLog(c);
   const args = argsFor(c);
-  if (changesWith(c, args)) {
-    if (!enabled || isPrivate()) return;
-    askConfirm({
-      title: `${(c.title || c.name).toUpperCase()}`,
-      body: [c.summary, c.warn].filter(Boolean).join(" ") + withLine(c, args),
-      word: c.confirm || "YES", action: "RUN",
-      run: async (word) => {
-        const r = await api.command(c.name, args, word);
-        answers[c.name] = { at: Date.now() / 1000, data: r };
-        if (current === c.name) drawAnswer(c);
-        return r?.message || "Done.";
-      },
-      done: () => onChanged(),
-      failed: (e) => { answers[c.name] = { at: Date.now() / 1000, error: e.message }; if (current === c.name) drawAnswer(c); },
-    });
-    return;
-  }
   const btn = $("cmd-run");
   if (btn) btn.disabled = true;
   showBusy();
@@ -274,21 +210,6 @@ async function run(c) {
     if (btn && current === c.name) btn.disabled = false;
   }
   if (current === c.name) drawAnswer(c);
-}
-
-// "With: Limit 8192 · …" so the confirm step shows exactly what goes to the node
-function withLine(c, args) {
-  const bits = [];
-  for (const p of c.params || []) {
-    if (!(p.name in args)) continue;
-    let v = args[p.name];
-    if (/password/i.test(p.name)) v = "••••";
-    else if (p.type === "bool") v = v ? "yes" : "no";
-    else if (p.type === "lines") v = String(v).split(/\s+/).filter(Boolean).join(", ");
-    else if (p.type === "choice") v = (p.choices || []).find((ch) => String(ch.value) === String(v))?.label ?? v;
-    bits.push(`${p.label}: ${v}`);
-  }
-  return bits.length ? "\n\nWith: " + bits.join(" · ") : "";
 }
 
 function showBusy() {

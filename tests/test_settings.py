@@ -66,14 +66,11 @@ class SettingsTest(unittest.TestCase):
                          ["amber", "phosphor", "ice", "bone", "violet", "monero"])
         self.assertEqual([k[7:] for k in d if k.startswith("panels.")], PANEL_IDS)
         self.assertIn("route", PANEL_IDS)
-        self.assertEqual(PANEL_IDS, ["lamps", "chain", "peers", "route", "controls", "traffic", "history", "mempool",
+        self.assertEqual(PANEL_IDS, ["lamps", "chain", "peers", "route", "bans", "traffic", "history", "mempool",
                                      "events", "computer", "system", "flood"])
         self.assertEqual(by_key["panels.computer"]["label"], "Computer")
-        self.assertEqual(by_key["panels.controls"]["label"], "Controls")
-        self.assertEqual(by_key["controls.enabled"]["label"], "Allow change commands")
-        self.assertEqual(by_key["controls.enabled"]["help"],
-                         "Ban, unban and the other commands that change something. Reading always works.")
-        self.assertIs(d["controls.enabled"], True)
+        self.assertEqual(by_key["panels.bans"]["label"], "Ban list")
+        self.assertNotIn("controls.enabled", by_key, "nothing can change the node, so there's nothing to turn off")
         self.assertEqual(d["node.log_path"], "~/.bitmonero/bitmonero.log")
         self.assertEqual((by_key["node.log_path"]["type"], by_key["node.log_path"]["section"]), ("path", "node"))
         for k, v in {"thresholds.low_peers": 8, "thresholds.no_block_warn_min": 30, "thresholds.no_block_bad_min": 60,
@@ -226,11 +223,10 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(s.values(), DEFAULTS)
         self.assertTrue((self.dir / "settings.json.bad").exists())
 
-    def test_controls_section(self):
-        self.s.update({"controls.enabled": False, "node.log_path": "/var/log/monero/monero.log"})
-        self.assertIn("controls.enabled", self.errors({"controls.enabled": "no"}))
-        self.s.reset_section("controls")
-        self.assertIs(self.s.get("controls.enabled"), True)
+    def test_reset_one_section(self):
+        self.s.update({"chain.blocks_shown": 100, "node.log_path": "/var/log/monero/monero.log"})
+        self.s.reset_section("chain")
+        self.assertEqual(self.s.get("chain.blocks_shown"), 60)
         self.assertEqual(self.s.get("node.log_path"), "/var/log/monero/monero.log", "other sections kept")
         self.s.reset_section("node")
         self.assertEqual(self.s.get("node.log_path"), "~/.bitmonero/bitmonero.log")

@@ -1,4 +1,4 @@
-/* CONTROLS screen hero: the ban clock and its side column in words */
+/* BANS screen hero: the ban clock and its side column in words */
 .bn { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 268px); min-height: inherit; height: 100%; }
 .bn-view { position: relative; min-width: 0; min-height: 470px; }
 .bn-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -82,7 +82,7 @@
 .bn-hint { color: var(--ink-4); font-size: var(--fs-0); font-family: var(--font-label); letter-spacing: var(--track); line-height: 1.5; margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
 .bn-hint.is-note { color: var(--accent); text-shadow: 0 0 10px rgba(var(--accent-rgb), .4); }
 
-/* the CONTROLS panel's row for a ban picked on the clock: lit for a few seconds */
+/* the BAN LIST panel's row for a ban picked on the clock: lit for a few seconds */
 #ban-list li.bn-found {
   background: linear-gradient(90deg, rgba(var(--accent-rgb), .16), rgba(var(--accent-rgb), .03) 85%);
   outline: 1px solid rgba(var(--accent-rgb), .5); outline-offset: 2px;

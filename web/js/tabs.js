@@ -4,7 +4,7 @@
 // to it, and in the window's storage so the app opens on it next time.
 import { $ } from "./dom.js";
 
-export const SCREENS = ["status", "network", "chain", "mempool", "traffic", "computer", "controls", "log"];
+export const SCREENS = ["status", "network", "chain", "mempool", "traffic", "computer", "bans", "log"];
 
 // which screen an alert belongs to; STATUS also shows the worst of all of them
 const ALERT_SCREEN = {

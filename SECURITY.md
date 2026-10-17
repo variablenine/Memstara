@@ -1,9 +1,10 @@
 # Security
 
-Memstara holds the login to your node's unrestricted RPC port, which can
-change the node. A bug that lets anything other than its own window use it,
-or that sends anything to the node the screens didn't ask for, is a security
-problem.
+Memstara only reads, but it may hold the login to your node's unrestricted
+RPC port, which can change the node. A bug that lets it send anything other
+than the reads on its list (`memstara/rpc.py`), that lets anything other than
+its own window use it, or that sends anything to the node the screens didn't
+ask for, is a security problem.
 
 Please report security problems privately: on GitHub, open the repository's
 **Security** tab and choose **Report a vulnerability**. Don't open a public
@@ -15,7 +16,7 @@ What's in scope:
 - the app's local server (`memstara/server.py`): the window key, the host and
   origin checks, and anything another program or user on the computer can
   reach;
-- the RPC allowlist and the confirm words (`memstara/rpc.py`,
+- the read-only RPC list and the commands built on it (`memstara/rpc.py`,
   `memstara/commands.py`);
 - privacy mode letting a real address, port, name or transaction id through to
   the window;

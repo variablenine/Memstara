@@ -24,9 +24,6 @@ const SECTIONS = [
   { id: "display", title: "LOOK", intro: ["How the screens look. Changes show right away as a preview; SAVE keeps them."] },
   { id: "panels", title: "PANELS", intro: ["Show or hide panels. Hidden panels stop drawing but the dashboard keeps watching."] },
   { id: "chain", title: "CHAIN", intro: ["The block tape in panel B."] },
-  { id: "controls", title: "CONTROLS", intro: [
-    "The COMMANDS drawer has every monerod console command. The ones that change something (ban, unban, out_peers, flush_txpool and so on) ask you to type a word first, so a stray key press can't set one off. ",
-    "Turning change commands off here leaves only the reading ones."] },
   { id: "node", title: "NODE'S LOG", intro: [
     "Where monerod writes its log. FIND MY NODE fills this in from the node's own --log-file or --data-dir. The dashboard only reads it."] },
   { id: "server", title: "WINDOW", intro: ["How the app window talks to the part of the app that reads your node, on this computer only. Changes here take effect the next time the app starts."] },

@@ -313,12 +313,11 @@
 .notice { border: 1px dashed var(--ink-3); color: var(--ink-2); padding: 8px 10px; font-size: var(--fs-1); }
 .notice b { color: var(--ink); font-weight: 500; }
 
-/* ---- E · controls ---- */
+/* ---- E · ban list (and the small blocks the COMPUTER panels share) ---- */
 .ctl-off { color: var(--ink-3); font-size: var(--fs-1); letter-spacing: .06em; }
 .ctl-block { display: grid; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .ctl-block:last-of-type { border-bottom: 0; padding-bottom: 0; }
 .ctl-title { font-family: var(--font-label); font-weight: 600; letter-spacing: .14em; font-size: var(--fs-1); color: var(--ink-2); }
-.ctl-sub { font-family: var(--font-label); letter-spacing: .14em; font-size: var(--fs-0); color: var(--ink-3); margin-top: 2px; }
 .ctl-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ctl-input {
   background: var(--bg); border: 1px solid var(--line-2); color: var(--ink); padding: 5px 8px; min-height: 30px;
@@ -326,7 +325,6 @@
 }
 .ctl-input:focus { border-color: rgba(var(--accent-rgb), .7); outline: none; }
 .ctl-input[aria-invalid="true"] { border-color: rgba(var(--warn-rgb), .7); }
-.ctl-num { flex: 0 0 76px; }
 .ctl-hint { color: var(--ink-3); font-size: var(--fs-0); line-height: 1.45; }
 .ctl-hint[data-level="warn"] { color: var(--warn); }
 .ctl-list { display: grid; gap: 0; }
@@ -337,17 +335,7 @@
 .ctl-list li[data-level="warn"] .cl-host { color: var(--warn); }
 .ctl-list .cl-glyph { font-size: var(--fs-0); }
 .ctl-list .cl-empty { color: var(--ink-3); font-size: var(--fs-1); grid-column: 1 / -1; }
-.ctl-state { font-size: var(--fs-2); }
-.ctl-state[data-level="warn"] { color: var(--warn); }
-.ctl-state[data-level="off"] { color: var(--ink-3); }
-.rs-form { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line-2); background: var(--bg-3); }
-.rs-form .seg-ctl { flex-wrap: wrap; max-width: 100%; }
-.rs-min { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-3); font-size: var(--fs-1); }
 .seg-ctl button:disabled { opacity: .35; cursor: default; text-decoration: line-through; }
-.ctl-msg { font-size: var(--fs-1); color: var(--ink-2); min-height: 1em; }
-.ctl-msg:empty { display: none; }
-.ctl-msg[data-level="ok"] { color: var(--accent); }
-.ctl-msg[data-level="bad"] { color: var(--bad-ink-2); }
 
 /* confirm dialog */
 .confirm {
@@ -405,12 +393,12 @@
    (after a two-column centrepiece or before a two-column panel) takes the
    whole row instead. */
 @media (min-width: 900px) and (max-width: 1399px) {
-  #p-lamps, #p-system, #p-mempool, #p-traffic, #p-controls { grid-column: 1 / -1; }
+  #p-lamps, #p-system, #p-mempool, #p-traffic, #p-bans { grid-column: 1 / -1; }
   #p-lamps .lamps { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  /* the ban form and the lists side by side, rather than stretched across */
-  #p-controls .pb { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; align-content: start; }
-  #p-controls .pb > :not(.ctl-block) { grid-column: 1 / -1; }
-  #p-controls .ctl-block { border-bottom: 0; padding-bottom: 0; align-content: start; }
+  /* the two lists side by side, rather than stretched across */
+  #p-bans .pb { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; align-content: start; }
+  #p-bans .pb > :not(.ctl-block) { grid-column: 1 / -1; }
+  #p-bans .ctl-block { border-bottom: 0; padding-bottom: 0; align-content: start; }
 }
 .ev-src { font-family: var(--font-label); font-size: 9px; letter-spacing: .12em; color: var(--ink-3); border: 1px solid var(--line-2); padding: 0 3px; margin-right: 6px; vertical-align: 1px; }
 

@@ -29,19 +29,15 @@ from pathlib import Path
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 REALM = "monero-rpc"
-# core_rpc_server.h: what a restricted RPC port leaves out
-UNRESTRICTED_ONLY = {"get_connections", "get_bans", "sync_info", "set_bans", "banned", "flush_txpool",
-                     "get_coinbase_tx_sum", "get_alternate_chains", "relay_tx", "prune_blockchain",
-                     "flush_cache", "rpc_access_data"}
-PLAIN_UNRESTRICTED_ONLY = {"/get_net_stats", "/mining_status", "/save_bc", "/get_peer_list",
-                           "/set_log_hash_rate", "/set_log_level", "/set_log_categories", "/get_transaction_pool",
-                           "/set_bootstrap_daemon", "/stop_daemon", "/set_limit", "/out_peers", "/in_peers",
-                           "/update", "/pop_blocks", "/start_mining", "/stop_mining"}
+# core_rpc_server.h (v0.18.5.3): the reads a restricted RPC port leaves out. The fake only
+# answers reads: Memstara never sends anything else (tests/test_safety.py).
+UNRESTRICTED_ONLY = {"get_connections", "get_bans", "sync_info", "banned", "get_coinbase_tx_sum",
+                     "get_alternate_chains", "rpc_access_data"}
+PLAIN_UNRESTRICTED_ONLY = {"/get_net_stats", "/mining_status", "/get_peer_list", "/get_transaction_pool"}
 JSON_RPC = {"get_info", "get_connections", "get_bans", "sync_info", "hard_fork_info", "get_fee_estimate",
-            "get_version", "get_last_block_header", "get_block_headers_range", "set_bans", "get_block",
+            "get_version", "get_last_block_header", "get_block_headers_range", "get_block",
             "get_block_header_by_hash", "get_alternate_chains", "get_coinbase_tx_sum", "get_output_histogram",
-            "get_output_distribution", "banned", "rpc_access_data", "prune_blockchain", "relay_tx", "flush_txpool",
-            "flush_cache"}
+            "get_output_distribution", "banned", "rpc_access_data"}
 POOL_TX = "c0ffee" + "0" * 58           # in the pool
 CHAIN_TX = "ab" * 32                    # in block 3,780,000
 POOL_FIXTURE = "pool_txs.json"          # six real transactions: their split hex, fee and weight
@@ -123,26 +119,13 @@ class FakeMonerod:
         self.nonces: set = set()
         self.calls: list = []
         self.requests: list = []
-        self.set_bans_seen: list = []
-        # state the change commands act on
         self.limit = {"limit_down": 8192, "limit_up": 2048}
-        self.peer_max = {"out_peers": 32, "in_peers": 64}
-        self.mining = None                       # dict while mining
-        self.hr_visible = False
-        self.log_level = 0
-        self.log_categories = "*:WARNING,net:FATAL,net.http:FATAL"
-        self.bootstrap = ""
-        self.pruning_seed = 0
+        self.mining = None                       # dict while mining (set by a test)
         self.pool = [POOL_TX]
         self.pool_txs: dict = {}                 # hash -> what get_transactions and the totals need
         self.real_txs = fixture(POOL_FIXTURE)["txs"]
         self.live_pool = False                   # pool totals from self.pool instead of the fixture
         self.block_txs: dict = {}                # height -> the hashes mine() put in that block
-        self.stopped = False
-        self.saved = 0
-        self.bad_blocks_flushed = 0
-        self.update_answer = {"update": False, "version": "", "user_uri": "", "auto_uri": "", "hash": "",
-                              "path": ""}
         self.lock = threading.RLock()
         self.results = {m: fixture(m + ".json") for m in
                         ("get_connections", "get_bans", "sync_info", "hard_fork_info", "get_fee_estimate",
@@ -323,8 +306,6 @@ class FakeMonerod:
                     return {"error": {"code": -2, "message": "Invalid start/end heights."}}
                 hs = [dict(self.chain[h], depth=top - h) for h in range(s, e + 1)]
                 return {"result": {"credits": 0, "headers": hs, "status": "OK", "top_hash": "", "untrusted": False}}
-            if method == "set_bans":
-                return self._set_bans(params)
             if method in self.results:
                 return {"result": copy.deepcopy(self.results[method])}
             return self._more(method, params, top)
@@ -374,39 +355,7 @@ class FakeMonerod:
             return self._ok(banned=b is not None, seconds=b["seconds"] if b else 0)
         if method == "rpc_access_data":
             return self._ok(entries=[], hashrate=0)
-        if method == "prune_blockchain":
-            if not params.get("check"):
-                self.pruning_seed = 0x181
-            return self._ok(pruned=bool(self.pruning_seed), pruning_seed=self.pruning_seed)
-        if method == "relay_tx":
-            for t in params.get("txids") or []:
-                if t not in self.pool:
-                    return {"error": {"code": -1, "message": "Transaction not found in pool: %s" % t}}
-            return self._ok()
-        if method == "flush_txpool":
-            ids = params.get("txids") or []
-            self.pool = [t for t in self.pool if ids and t not in ids]
-            return self._ok()
-        if method == "flush_cache":
-            if params.get("bad_blocks"):
-                self.bad_blocks_flushed += 1
-            return self._ok()
         return {"error": {"code": -32601, "message": "Method not found"}}
-
-    def _set_bans(self, params):
-        """Like core_rpc_server::on_set_bans: a host with / is a subnet, else one address."""
-        self.set_bans_seen.append(copy.deepcopy(params))
-        bans = self.results["get_bans"].setdefault("bans", [])
-        for b in params.get("bans") or []:
-            host = b.get("host") or ""
-            if not re.fullmatch(r"\d+\.\d+\.\d+\.\d+(/\d+)?", host):
-                return {"error": {"code": -1, "message": "Unsupported host/subnet type"}}
-            bans[:] = [x for x in bans if x["host"] != host]
-            if b.get("ban"):
-                bans.append({"host": host, "ip": 0, "seconds": int(b.get("seconds") or 0)})
-        if not bans:
-            del self.results["get_bans"]["bans"]          # epee leaves empty lists out
-        return {"result": {"status": "OK", "untrusted": False}}
 
     def plain(self, path, params=None):
         params = params or {}
@@ -492,63 +441,6 @@ class FakeMonerod:
                                          "rpc_credits_per_hash": 0}
             return {"white_list": [peer(i, 0x181 if i % 2 else 0, 18089 if i % 3 == 0 else 0) for i in range(1, 7)],
                     "gray_list": [peer(i, 0, 0) for i in range(10, 14)]}
-        if path == "/save_bc":
-            self.saved += 1
-            return {}
-        if path == "/stop_daemon":
-            self.stopped = True
-            return {}
-        if path == "/update":
-            if p.get("command") not in ("check", "download", "update"):
-                return {"status": "unknown command: '%s'" % p.get("command")}
-            return dict(self.update_answer)
-        if path == "/pop_blocks":
-            n = int(p.get("nblocks") or 0)
-            for h in sorted(self.chain)[-n:]:
-                del self.chain[h]
-            return {"height": self.top + 1}
-        if path == "/set_limit":
-            for k in ("limit_down", "limit_up"):
-                v = int(p.get(k) or 0)
-                if v < 0 and v != -1:
-                    return {"status": "Invalid parameter"}
-                if v > 0:
-                    self.limit[k] = v
-                elif v == -1:
-                    self.limit[k] = {"limit_down": 8192, "limit_up": 2048}[k]
-            return dict(self.limit)
-        if path in ("/out_peers", "/in_peers"):
-            k = path[1:]
-            if p.get("set", True):
-                self.peer_max[k] = int(p.get(k) or 0)
-            return {k: self.peer_max[k]}
-        if path == "/set_bootstrap_daemon":
-            self.bootstrap = p.get("address", "")
-            return {}
-        if path == "/start_mining":
-            if self.mining:
-                return {"status": "Already mining"}
-            self.mining = dict(p)
-            return {}
-        if path == "/stop_mining":
-            if not self.mining:
-                return {"status": "Mining never started"}
-            self.mining = None
-            return {}
-        if path == "/set_log_hash_rate":
-            if not self.mining:
-                return {"status": "NOT MINING"}
-            self.hr_visible = bool(p.get("visible"))
-            return {}
-        if path == "/set_log_level":
-            lvl = p.get("level")
-            if not isinstance(lvl, int) or not 0 <= lvl <= 4:
-                return {"status": "Error: log level not valid"}
-            self.log_level = lvl
-            return {}
-        if path == "/set_log_categories":
-            self.log_categories = p.get("categories", "")
-            return {"categories": self.log_categories}
         return None
 
     # ---- Digest login (like monerod --rpc-login)

@@ -17,17 +17,15 @@ and the tests (`tests/`). If code and this file disagree, fix one of them.
 - **Generic.** It works with any `monerod` on Linux and assumes nothing about
   the user's own scripts, services or network. It loads no code from outside
   `memstara/` and `web/`.
-- **A GUI for monerod's own commands, nothing more.** Every command you can
-  type into `monerod`'s console (or run as `monerod <command>`) is available,
-  reading and changing exactly what that command reads and changes. Monero's
-  console commands are themselves thin wrappers around RPC methods
-  (`src/daemon/rpc_command_executor.cpp`: each one either sends that RPC
-  request or calls the same handler in-process), so the unrestricted RPC port
-  gives the dashboard the same view and the same powers as the console. The RPC
-  client only sends methods that some console command sends, plus four
-  read-only ones the poller uses (`get_last_block_header`, `get_version`,
-  `get_transaction_pool_hashes` and `get_output_distribution`). Changes need a
-  typed confirm word. See **Commands**.
+- **Read-only.** Nothing it sends can change the node. The RPC client has one
+  list of methods (`READ_ALLOWED` in `memstara/rpc.py`), every one a read, and
+  refuses anything else before a request is made; `tests/test_safety.py` names
+  every method on it and fails if one of monerod's methods that change
+  something is added. The command drawer has `monerod`'s read-only console
+  commands, reading exactly what each one reads (Monero's console commands
+  are thin wrappers around RPC methods, `src/daemon/rpc_command_executor.cpp`).
+  The commands that change something (`ban`, `out_peers`, `stop_daemon` and
+  the rest) are left to `monerod`'s own console. See **Commands**.
 - **Live from the start.** There is no pretend node. The dashboard reads the
   real `monerod` at `source.rpc_url`. Tests use a small canned-answer fake in
   `tests/` that never ships as a feature.
@@ -157,8 +155,8 @@ All calls go to `source.rpc_url` (default `http://127.0.0.1:18081`, monerod's ow
 (`source.rpc_user` / `source.rpc_password`) for nodes started with
 `--rpc-login`. Timeout `source.timeout_s` (default 8).
 
-Read allowlist (anything not on this list or the write list below raises
-`RpcNotAllowed` before a request is made):
+The poller's reads (the command drawer's are under **Commands**; anything not
+on `READ_ALLOWED` raises `RpcNotAllowed` before a request is made):
 
 | Method | Endpoint | Cadence | Used for |
 |---|---|---|---|
@@ -182,8 +180,11 @@ Read allowlist (anything not on this list or the write list below raises
 Facts checked in Monero's source (`src/rpc/core_rpc_server.h`,
 `core_rpc_server.cpp`, `core_rpc_server_commands_defs.h`, tag v0.18.5.3):
 
-- `get_connections`, `get_bans`, `sync_info`, `get_net_stats` and
-  `get_alternate_chains` only exist on an **unrestricted** RPC port. On a
+- `get_connections`, `get_bans`, `sync_info`, `get_net_stats`,
+  `get_peer_list`, `get_transaction_pool`, `mining_status`, `banned`,
+  `get_coinbase_tx_sum`, `get_alternate_chains` and `rpc_access_data` only
+  exist on an **unrestricted** RPC port (`core_rpc_server.h`: `!m_restricted`
+  in their map lines). On a
   restricted port `get_info` also zeroes the peer counts, `start_time`,
   `version`, and reports `free_space` as 2^64-1. The adapter detects
   `get_info.restricted == true` and reports it (see `source.restricted`), and
@@ -439,7 +440,7 @@ heights found in one poll.
 
 `{"t", "level": "info"|"warn"|"bad"|"ok", "kind", "text"}`. Kinds: `block`,
 `reorg`, `peer_in`, `peer_out`, `peer_gone`, `alert`, `clear`, `restart`,
-`source`, `settings`, `sync`, `control` (a change command that succeeded) and
+`source`, `settings`, `sync` and
 `log` (lines from monerod's log, see **Local reads**). Peer join/leave events
 are summarised ("3 joined · 1 left") instead of one line each: the first change
 after a quiet spell at once, then at most one event per 5 seconds, and a peer
@@ -662,13 +663,12 @@ Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 | `display.temp_unit` | choice auto/f/c | `auto` | auto: °F when the computer's language is en-US (WebKit's `navigator.language`, from the locale), °C otherwise |
 | `panels.<id>` | bool | true | show or hide each panel (ids below) |
 | `chain.blocks_shown` | int 20-200 | 60 | |
-| `controls.enabled` | bool | true | allows change commands (panel E and the command drawer); read commands always work |
 | `node.log_path` | path | `~/.bitmonero/bitmonero.log` | monerod's own log; on first run, from FIND MY NODE. Left at the default, the log file the running node was found writing (its `--log-file` or data dir) is read instead |
 | `local.enabled` | bool | true | computer reads (see Local reads) |
 | `local.every_s` | choice 1/5/10/30 | 1 | |
 | `server.port` | int 1024-65535 | 18200 | the window's local port; takes effect the next time the app starts |
 
-Panel ids (core): `lamps`, `chain`, `peers`, `route`, `controls`, `traffic`,
+Panel ids: `lamps`, `chain`, `peers`, `route`, `bans`, `traffic`,
 `history`, `mempool`, `events`, `computer`, `system`, `flood`.
 
 ## HTTP API and safety rules
@@ -772,9 +772,8 @@ already and carry fractions of a second).
 
 **Locked while it's on:** settings that hold an address, a folder or a login (types
 `text`, `url`, `path`, `password`) show their hidden form, read-only, and their sections
-can't be reset; any value from the window with a token in it is refused; every command
-that changes the node (ban and unban included) answers `403`; TEST CONNECTION and USE
-THIS refuse hidden values.
+can't be reset; any value from the window with a token in it is refused; TEST
+CONNECTION and USE THIS refuse hidden values.
 
 **The window** (`privacy.js`) draws each token as a run of block glyphs in the shape of
 what it hides (four groups for an address, five characters for a port), the same glyphs
@@ -798,93 +797,75 @@ and anything you type yourself, as you type it. A transaction you send shows up 
 new dot on the mempool screen once your node passes it on, so with someone watching the
 screen at that moment, the timing could point at it.
 
-## Commands (every monerod console command)
+## Commands (monerod's read-only console commands)
 
-`memstara/commands.py` holds one entry per `monerod` console command (names and
-usage from `src/daemon/command_server.cpp`, v0.18.5.3), with the RPC calls its
-executor makes (`src/daemon/rpc_command_executor.cpp`). The RPC client's
-allowlist is exactly the union of the calls below plus the read-only calls the
-poller makes (two of which, `get_last_block_header` and `get_version`, no
-console command uses). Nothing else can be sent.
+`memstara/commands.py` holds one entry per read-only `monerod` console command
+(names and usage from `src/daemon/command_server.cpp`, v0.18.5.3), with the
+RPC calls its executor makes (`src/daemon/rpc_command_executor.cpp`). Every
+call is on `READ_ALLOWED`; `check_registry()` and `tests/test_safety.py` fail
+if one isn't.
 
 `GET /api/commands` → `{"commands": [{"name", "aliases", "group", "title",
-"summary", "kind": "read"|"change", "confirm": "BAN"|null, "warn": "..."|null,
-"calls": ["set_bans"], "params": [{"name", "label", "type":
-"int"|"text"|"choice"|"bool"|"lines", "required", "min", "max", "choices",
+"summary", "usage", "calls": ["get_bans"], "params": [{"name", "label",
+"type": "int"|"text"|"choice"|"bool", "required", "min", "max", "choices",
 "placeholder", "help"}]}]}`. Metadata only.
 
-`POST /api/command` `{"name", "args": {...}, "confirm"?}` → `200 {"ok": true,
-"name", "calls": [...], "result": {"<rpc method>": <its result object>, ...},
+`POST /api/command` `{"name", "args": {...}}` → `200 {"ok": true, "name",
+"calls": [...], "result": {"<rpc method>": <its result object>, ...},
 "message"?: "<plain sentence>"}`; bad arguments `400 {"ok": false, "error",
-"field"?}`; a change command without the right confirm word `400 {"ok":
-false, "error": "Type BAN to confirm."}`; change commands while
-`controls.enabled` is false `403`; node errors `502` with monerod's own error
-message. Read commands need no confirm word. Every change command that
-succeeds adds an event (`kind: "control"`) and a stderr line, and makes the
-next poll re-read bans and limits. The write guard (header + Origin) applies to
-`POST /api/command`.
+"field"?}`; a name that isn't one of these `404` ("There's no read-only
+monerod command called X."); node errors `502` with monerod's own error
+message. The write guard (header + Origin) applies to `POST /api/command`.
 
-Arguments are validated before anything is sent (types, ranges, 64-hex hashes,
-Monero addresses by prefix and length). A few commands get a safety limit the
-console doesn't have; each is noted below and in the command's `help`.
+Arguments are validated before anything is sent (types, ranges, 64-hex
+hashes). A few commands get a safety limit the console doesn't have; each is
+noted below and in the command's `help`.
 
-| group | command (aliases) | kind / confirm | RPC calls | arguments, notes |
-|---|---|---|---|---|
-| Node | `status` | read | getinfo, mining_status, hard_fork_info | like the console: ", bootstrapping from X, local height: H (P%)" while get_info comes from a bootstrap node, " was used before" after |
-| Node | `print_status` | read | (getinfo, to see it answers) | |
-| Node | `version` | read | getinfo | |
-| Node | `print_height` | read | /getheight | |
-| Node | `diff` | read | getinfo | |
-| Node | `sync_info` | read | sync_info | |
-| Node | `save` | change SAVE | /save_bc | |
-| Node | `stop_daemon` (`exit`) | change STOP | /stop_daemon | warn: "Stops the node. If a service or script restarts it automatically, it comes back on its own." |
-| Node | `update` | read for `check`, change DOWNLOAD for `download` | /update | `command`: check/download. warn: "Download only: monerod saves the release file, it doesn't install it." |
-| Chain | `print_bc` | read | getblockheadersrange | `begin`, `end`; at most 1,000 blocks per request (dashboard limit) |
-| Chain | `print_block` | read | getblock | `block`: height or 64-hex hash |
-| Chain | `bc_dyn_stats` | read | getinfo, get_fee_estimate, getblockheadersrange, hard_fork_info | `last` 1-10,000 |
-| Chain | `alt_chain_info` | read | getinfo, get_alternate_chains, getblockheaderbyhash | optional `blockhash` |
-| Chain | `hard_fork_info` | read | hard_fork_info | optional `version` |
-| Chain | `print_coinbase_tx_sum` | read | get_coinbase_tx_sum | `start`, `count` 1-100,000 (dashboard limit; big ranges keep the node busy) |
-| Chain | `output_histogram` | read | get_output_histogram | optional `amount` (atomic units), `min_count`, optional `max_count` |
-| Chain | `check_blockchain_pruning` | read | prune_blockchain (check: true) | |
-| Chain | `pop_blocks` | change POP | /pop_blocks | `count` 1-1,000 (dashboard limit). warn: removes the newest blocks; the node downloads them again |
-| Chain | `prune_blockchain` | change PRUNE | prune_blockchain (check: false) | warn: permanent; going back to a full chain means downloading it all again. Runs inside monerod for a long time; the dashboard stops waiting after 120 s |
-| Transactions | `print_tx` | read | /gettransactions | `txid` 64-hex, `hex` bool, `json` bool. Differs from the console here: the console always sends `decode_as_json: false` and turns the raw transaction into JSON itself (C++ `parse_and_validate_tx_from_blob`), which the dashboard can't do in plain Python, so with `json` on it sends `decode_as_json: true` and shows monerod's own JSON (`txs[].as_json`) |
-| Transactions | `is_key_image_spent` | read | /is_key_image_spent | `key_image` 64-hex |
-| Transactions | `print_pool` (`print_pool_sh`) | read | /get_transaction_pool | |
-| Transactions | `print_pool_stats` | read | /get_transaction_pool_stats, getinfo | |
-| Transactions | `relay_tx` | change RELAY | relay_tx | `txid` 64-hex |
-| Transactions | `flush_txpool` | change FLUSH | flush_txpool | optional `txid` (empty = the whole pool) |
-| Network | `print_cn` | read | get_connections | |
-| Network | `print_pl` | read | /get_peer_list (include_blocked: true) | `list`: all/white/gray, `pruned` bool, `publicrpc` bool, `limit`. As the console (rpc_command_executor.cpp): `limit` takes the first N of each list, then `pruned` / `publicrpc` keep only those among them that fit, so fewer than N can show |
-| Network | `print_pl_stats` | read | /get_peer_list | |
-| Network | `print_net_stats` | read | /get_net_stats, /get_limit | |
-| Network | `limit` / `limit_up` / `limit_down` | read without a value, change LIMIT with one | /get_limit, /set_limit | `kbps` (-1 = back to default). Lasts until the node restarts |
-| Network | `out_peers` / `in_peers` | change PEERS | /out_peers, /in_peers | `max` 0-1,000. Lasts until the node restarts, when its `--out-peers` / `--in-peers` flag (or monerod's default) applies again |
-| Network | `set_bootstrap_daemon` | change BOOTSTRAP | /set_bootstrap_daemon | `address` (auto, none, host[:port]), `username`, `password`, `proxy`. warn: wallets using your node get sent to that node while yours syncs |
-| Bans | `bans` | read | get_bans | |
-| Bans | `banned` | read | banned | `address` |
-| Bans | `ban` | change BAN | set_bans | `hosts`: one address or range per line (the console's `@file` form), `seconds` 1 to 31,536,000, default 86,400. Refused: IPv6, non-public addresses and ranges wider than /16 (dashboard limit), and ranges holding the node's own address (`--p2p-bind-ip`, from its flags) or an address an add-on protects (`protected_hosts`): "X holds this computer's own public address (the node is bound to it with --p2p-bind-ip / from the T add-on), so banning it would cut your node off." Before the first poll has worked those out, 409 "The dashboard hasn't finished its first look at the node yet, so it can't check which addresses are this computer's own. Try again in a few seconds." When the node's flags couldn't be read (local reads off, or the node not found), its `warn` and its answer end with "The node's own address (its --p2p-bind-ip) couldn't be checked, because local reads are off or the running node wasn't found on this computer. Make sure you don't ban it." |
-| Bans | `unban` | change UNBAN | set_bans (ban: false) | `address` |
-| Bans | `flush_cache` | change FLUSH | flush_cache | `bad_blocks` bool (default true; it must be on). monerod's request has only `bad_blocks` (core_rpc_server_commands_defs.h): the console's usage line still lists `bad-txs`, but the console takes only `bad-blocks` (command_parser_executor.cpp), so the form has no bad-transactions box |
-| Mining | `mining_status` | read | /mining_status | |
-| Mining | `start_mining` | change MINE | /start_mining | `address` (Monero address), `threads` 1-256 or auto, `background` bool, `ignore_battery` bool |
-| Mining | `stop_mining` | change STOP | /stop_mining | |
-| Mining | `show_hr` / `hide_hr` | change HR | /set_log_hash_rate | only while mining |
-| Logs | `set_log` | change LOG | /set_log_level or /set_log_categories | `level` 0-4, or `categories` (letters, digits, `*:,+-._`) |
-| Logs | `rpc_payments` | read | rpc_access_data | |
+| group | command (aliases) | RPC calls | arguments, notes |
+|---|---|---|---|
+| Node | `status` | getinfo, mining_status, hard_fork_info | like the console: ", bootstrapping from X, local height: H (P%)" while get_info comes from a bootstrap node, " was used before" after. On a restricted port mining_status isn't there, so it says "mining info unavailable" |
+| Node | `print_status` | (getinfo, to see it answers) | |
+| Node | `version` | getinfo | |
+| Node | `print_height` | /getheight | |
+| Node | `diff` | getinfo | |
+| Node | `sync_info` | sync_info | |
+| Chain | `print_bc` | getinfo, getblockheadersrange | `begin`, `end`; at most 1,000 blocks per request (dashboard limit) |
+| Chain | `print_block` | getblock | `block`: height or 64-hex hash |
+| Chain | `bc_dyn_stats` | getinfo, get_fee_estimate, hard_fork_info, getblockheadersrange | `last` 1-10,000 (dashboard limit) |
+| Chain | `alt_chain_info` | getinfo, get_alternate_chains, getblockheaderbyhash | optional `blockhash`; block headers for chains up to 1,000 blocks long (dashboard limit) |
+| Chain | `hard_fork_info` | hard_fork_info | optional `version` |
+| Chain | `print_coinbase_tx_sum` | get_coinbase_tx_sum | `start`, `count` 1-100,000 (dashboard limit; big ranges keep the node busy) |
+| Chain | `output_histogram` | get_output_histogram | optional `amount` (atomic units), `min_count`, optional `max_count` |
+| Transactions | `print_tx` | /gettransactions | `txid` 64-hex, `hex` bool, `json` bool. Differs from the console here: the console always sends `decode_as_json: false` and turns the raw transaction into JSON itself (C++ `parse_and_validate_tx_from_blob`), which the dashboard can't do in plain Python, so with `json` on it sends `decode_as_json: true` and shows monerod's own JSON (`txs[].as_json`) |
+| Transactions | `is_key_image_spent` | /is_key_image_spent | `key_image` 64-hex |
+| Transactions | `print_pool` (`print_pool_sh`) | /get_transaction_pool | |
+| Transactions | `print_pool_stats` | /get_transaction_pool_stats, getinfo | |
+| Network | `print_cn` | get_connections | |
+| Network | `print_pl` | /get_peer_list (include_blocked: true) | `list`: all/white/gray, `pruned` bool, `publicrpc` bool, `limit`. As the console (rpc_command_executor.cpp): `limit` takes the first N of each list, then `pruned` / `publicrpc` keep only those among them that fit, so fewer than N can show |
+| Network | `print_pl_stats` | /get_peer_list | |
+| Network | `print_net_stats` | /get_net_stats, /get_limit | |
+| Network | `limit` | /get_limit | no value: the console's `limit` with a value sets the limits, which this one can't |
+| Bans | `bans` | get_bans | |
+| Bans | `banned` | banned | `address` |
+| Mining | `mining_status` | /mining_status | |
+| Mining | `rpc_payments` | rpc_access_data | |
 
-`help` and `apropos` are the drawer's search box. Facts checked in the source:
-monerod's automatic bans last 24 h (`P2P_IP_BLOCKTIME`), DNS blocklist bans
-8 days, `--ban-list` file bans forever; a host with a `/` is tried as an IPv4
-subnet first (`block_subnet` drops every connection in it). monerod keeps
-bans only in memory: "Bans last until they run out or the node restarts;
-bans from --ban-list and the DNS blocklist come back when it starts." The ban
-form says so.
+`help` and `apropos` are the drawer's search box.
 
-Panel E's ban and unban buttons are shortcuts to the `ban` and `unban`
-commands above, with the ranges at the eclipse limits as one-click
-suggestions.
+Left out, because they change something: `start_mining`, `stop_mining`,
+`show_hr`, `hide_hr`, `save`, `set_log`, `stop_daemon` (`exit`), `limit` with
+a value, `limit_up`, `limit_down`, `out_peers`, `in_peers`, `ban`, `unban`,
+`flush_txpool`, `update`, `relay_tx`, `pop_blocks`, `prune_blockchain`,
+`check_blockchain_pruning` (it sends `prune_blockchain`, which prunes unless
+asked only to check), `set_bootstrap_daemon` and `flush_cache`. Their RPC
+methods aren't on `READ_ALLOWED`, so they can't be sent either.
+
+Facts checked in the source, for the ban screens: monerod's automatic bans
+last 24 h (`P2P_IP_BLOCKTIME`), DNS blocklist bans 8 days, `--ban-list` file
+bans forever; a host with a `/` is an IPv4 subnet ban (`block_subnet` drops
+every connection in it). monerod keeps bans only in memory, so bans run out
+or end when the node restarts; bans from `--ban-list` and the DNS blocklist
+come back when it starts.
 
 ### monerod's log (read-only)
 
@@ -906,8 +887,7 @@ at PATH.").
 
 ## Local reads: what RPC can't show
 
-Changes only ever go through monerod's RPC commands (above). Reads also come
-from the computer itself, because some things about the node aren't in any RPC
+Nothing here changes anything either. Reads also come from the computer itself, because some things about the node aren't in any RPC
 answer. Everything here is read-only, Linux-only (`/proc`, `/sys`, iproute2),
 runs as the user, and degrades to `null` with a short reason when a source is
 missing. `memstara/host.py` (finding the node, process, peers' round trips,
@@ -920,7 +900,7 @@ the poll started: the node's answers before it take a different time each poll, 
 would make a rate read every second jump about. With `local.enabled` off none of it runs: `snapshot.host` is
 `null`, every peer's `rtt_ms` / `retrans` is `null`, no log events, no
 `cpu_temp_c` / `node_cpu_pct` in history, and the node's flags aren't read
-(so the `ban` guard and the `tor` alert's `auto` rule go without them).
+(so the `tor` alert's `auto` rule goes without them).
 
 ### Finding the node (`GET /api/discover`, guarded)
 
@@ -948,7 +928,7 @@ So nobody has to know their own ports, the core reads the running
   starts that way, so `--rpc-logi` (5 letters or more) counts as `--rpc-login`.
 - `--data-dir` (default `~/.bitmonero`), `--log-file` (default
   `<data dir>/bitmonero.log`), `--p2p-bind-ip` / `--p2p-bind-ipv6-address`
-  (the node's own addresses: `ban` refuses ranges holding them), `--tx-proxy`
+  (the node's own addresses), `--tx-proxy`
   (Tor or I2P sending is on; a value starting `tor,` means Tor sending, so the
   `tor` alert applies without guessing, and an I2P-only node has no `tor`
   alert).
@@ -1001,8 +981,7 @@ anything else, `host.py` checks where `source.rpc_url` points:
 Then nothing about this computer is read: `snapshot.host` is the empty shape
 with `"ok": false`, a plain-sentence `error`, and `"remote": {"how": "network"
 | "tunnel", "where": "host:port", "via": "ssh" | null}` (null when the node is
-here). The poller skips finding the node's process (so `ban` says the node's
-own address couldn't be checked), reads monerod's log only from a
+here). The poller skips finding the node's process, reads monerod's log only from a
 `node.log_path` set by hand (a copy or a mounted folder; `/api/node-log` says
 why it can't otherwise), and writes `source` events once per place: that the
 node is elsewhere, and, without a tunnel, that plain `http` across a network
@@ -1095,7 +1074,7 @@ log aren't shown here (COMMANDS has the whole log)".
 | `###### REORGANIZE on height: H of T ... alternative blockchain size: N` | blockchain.cpp | warn: "monerod switched to another chain at height H (N blocks)" |
 | `REORGANIZE SUCCESS! on height: H, new blockchain size: S` | blockchain.cpp | info |
 | `----- BLOCK ADDED AS ALTERNATIVE ON HEIGHT H` | blockchain.cpp | info: "a competing block at H lost (nothing was replaced)" |
-| `Host X blocked.` / `Subnet X blocked.` | net_node.inl | info: "monerod banned X" (bans from the dashboard are already logged as control events; this catches monerod's own) |
+| `Host X blocked.` / `Subnet X blocked.` | net_node.inl | info: "monerod banned X" |
 | `Host X unblocked.` / `Subnet X unblocked.` | net_node.inl | info |
 | `You are now synchronized with the network` | cryptonote_protocol_handler.inl | ok |
 | any line at level `ERROR` or `FATAL` | any | bad, first 200 characters |
@@ -1142,7 +1121,7 @@ a responsive grid (three columns wide, two below 1400 px, one when narrow).
 | 04 MEMPOOL | TRANSACTION POOL: one dot per waiting transaction in bands by how long it has waited; dots drop in as they arrive and leave in a block-shaped sweep | H mempool |
 | 05 TRAFFIC | LIVE TRAFFIC: a scope of download and upload over 15 minutes, with the node's limits when they are near, and flow lanes whose dots speed up with the data | F traffic, G history |
 | 06 COMPUTER | GAUGES: dials for CPU temperature, monerod's CPU, memory, how busy the chain's drive is and disk free, each with its last 15 minutes where kept | J computer |
-| 07 CONTROLS | BANS: a clock with one ring per ban of 24 h or less, each draining as its time runs out; click one to find it in the controls | E controls |
+| 07 BANS | BAN CLOCK: a clock with one ring per ban of 24 h or less, each draining as its time runs out; click one to find it in the ban list | E ban list |
 | 08 LOG | EVENT TIMELINE: lanes of what happened in the last hour (blocks, peers, the node, alerts, monerod's log, blocks replaced), with the newest typed out underneath | I log |
 
 **Centrepiece contract** (`web/js/heroes/index.js`): each module's default
@@ -1186,9 +1165,10 @@ The older panels, by letter:
 - **D · Route** (`route`): other nodes → the network link the node's p2p port
   is bound to, if any (from `host.bind_if`, titled VPN when it's a tun/WireGuard
   interface) → your node → Tor and the dashboard.
-- **E · Controls** (`controls`): ban a range (the ranges flagged right now as
-  one-click suggestions) and the short bans (24 h or less left) with UNBAN,
-  plus a button to the command drawer.
+- **E · Ban list** (`bans`): the short bans (24 h or less left) with their
+  time left, a count of the longer ones, and the ranges at the eclipse limits
+  right now. Read-only: banning is left to `monerod`'s own console. A button
+  opens the command drawer.
 - **F · Traffic** (`traffic`): download / upload over the last 5 s and since
   start, last 15 minutes in the server's 5 s rows (the newest one moving with
   each reading).
@@ -1215,10 +1195,9 @@ The older panels, by letter:
   last 24 hours against a usual day, the limits, and the last 30 days of new
   outputs as bars split at a usual day (with a table view). While the year is
   being read it shows how far along it is; otherwise why there's no reading.
-- **Command drawer**: every monerod console command, grouped, searchable,
-  each with a form for its arguments and its answer drawn as tables; plus log
-  view (monerod's). Change commands open a confirm
-  dialog that needs a typed word and shows the arguments being sent.
+- **Command drawer**: monerod's read-only console commands, grouped,
+  searchable, each with a form for its arguments and its answer drawn as
+  tables; plus the last lines of monerod's log.
 
 The settings menu slides in from the right and is generated from the settings
 schema, with TEST CONNECTION and FIND MY NODE in the data source section.

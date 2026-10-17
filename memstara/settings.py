@@ -19,11 +19,10 @@ from urllib.parse import urlsplit
 from .util import atomic_write, config_dir, ensure_private_dir
 
 # the core panels, in grid order (A to K on the screens)
-PANEL_IDS = ["lamps", "chain", "peers", "route", "controls", "traffic", "history", "mempool", "events",
+PANEL_IDS = ["lamps", "chain", "peers", "route", "bans", "traffic", "history", "mempool", "events",
              "computer", "system", "flood"]
 
-SECTIONS = ["source", "local", "thresholds", "grace", "display", "panels", "chain", "controls", "node",
-            "server"]
+SECTIONS = ["source", "local", "thresholds", "grace", "display", "panels", "chain", "node", "server"]
 
 
 def entry(key, type_, default, label, help_="", min_=None, max_=None, step=None, choices=None, unit=None):
@@ -138,15 +137,13 @@ SCHEMA = [
 # kept by "reset to defaults": privacy mode only goes off through its own switch, which asks first
 KEEP_ON_RESET = ("display.privacy",)
 _PANEL_LABELS = {
-    "lamps": "Lamp wall", "chain": "Chain", "peers": "Peer scope", "route": "Route", "controls": "Controls",
+    "lamps": "Lamp wall", "chain": "Chain", "peers": "Peer scope", "route": "Route", "bans": "Ban list",
     "traffic": "Traffic", "history": "History", "mempool": "Mempool", "events": "Log",
     "computer": "Computer", "system": "System", "flood": "Black marble watch",
 }
 SCHEMA += [_e("panels." + p, "bool", True, _PANEL_LABELS[p], "Show this panel.") for p in PANEL_IDS]
 SCHEMA += [
     _e("chain.blocks_shown", "int", 60, "Blocks on the tape", "", 20, 200, unit="blocks"),
-    _e("controls.enabled", "bool", True, "Allow change commands",
-       "Ban, unban and the other commands that change something. Reading always works."),
     _e("node.log_path", "path", "~/.bitmonero/bitmonero.log", "monerod's log",
        "monerod's own log file (--log-file), shown in the command drawer and read for the event log. "
        "Read-only. FIND MY NODE reads it from the running monerod. For a node on another computer, "

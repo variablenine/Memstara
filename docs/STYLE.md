@@ -65,7 +65,7 @@ screens, sequence-of-event logs).
     and the desktop's reduce-animation setting always stills them. Centrepieces
     only animate while their screen is on show.
 14. **Safe from stray keys.** Keyboard shortcuts are off by default; settings only change
-    when SAVE is clicked; changes to the node need a typed confirm word.
+    when SAVE is clicked; turning privacy mode off needs a typed word.
 15. **Nothing leaves the machine.** Fonts are bundled (IBM Plex Mono and IBM
     Plex Sans Condensed, SIL Open Font License 1.1, licence files in
     `web/fonts/`), and the page loads nothing from any other host.

@@ -1,14 +1,16 @@
-"""monerod RPC client: a fixed allowlist, nothing else.
+"""monerod RPC client: one fixed list of reads, nothing else.
 
-The allowlist is exactly the RPC methods monerod's own console commands send
-(see memstara/commands.py, one entry per console command) plus the read-only ones the
-poller uses. READ_ALLOWED never changes anything and goes through RpcClient.call().
-WRITE_ALLOWED can change something and goes only through RpcClient.call_write(),
-which answers only memstara.commands (where each change needs a typed confirm word).
-Anything on neither list raises RpcNotAllowed before any request is made.
+READ_ALLOWED below is every RPC method Memstara can send. Each one only reads: none of
+them changes anything on the node. They are the calls monerod's read-only console commands
+send (see memstara/commands.py, one entry per console command) plus four more that only
+the screens use.
+A method that isn't on the list raises RpcNotAllowed before any request is made, and
+tests/test_safety.py fails if one of monerod's methods that change something is ever added.
 
-The endpoint for each method is where monerod v0.18.5.3 maps it
-(src/rpc/core_rpc_server.h): "/json_rpc" for JSON-RPC methods, otherwise its own path.
+Each entry gives the line in monerod v0.18.5.3's src/rpc/core_rpc_server.h that maps the
+method to its handler. "hidden on a restricted port" marks the ones monerod only offers on
+an unrestricted RPC port (the _IF(..., !m_restricted) lines there).
+
 Supports HTTP Digest login (monerod --rpc-login). Errors come back as RpcError with a
 short plain-language summary; the login never appears in any message.
 """
@@ -22,7 +24,6 @@ import os
 import re
 import socket
 import ssl
-import sys
 import threading
 import time
 import urllib.error
@@ -33,62 +34,37 @@ from . import VERSION
 
 # method -> endpoint ("/json_rpc" for JSON-RPC, otherwise the plain path)
 READ_ALLOWED = {
-    # the poller (get_last_block_header, get_version, get_transaction_pool_hashes and
+    # the screens (get_last_block_header, get_version, get_transaction_pool_hashes and
     # get_output_distribution are used by no console command)
-    "get_info": "/json_rpc",
-    "get_connections": "/json_rpc",
-    "get_transaction_pool_stats": "/get_transaction_pool_stats",
-    "get_transaction_pool_hashes": "/get_transaction_pool_hashes",
-    "get_net_stats": "/get_net_stats",
-    "get_block_headers_range": "/json_rpc",
-    "get_last_block_header": "/json_rpc",
-    "sync_info": "/json_rpc",
-    "get_bans": "/json_rpc",
-    "hard_fork_info": "/json_rpc",
-    "get_fee_estimate": "/json_rpc",
-    "get_limit": "/get_limit",
-    "get_version": "/json_rpc",
-    "get_output_distribution": "/json_rpc",    # the black marble watch (flood.py): RingCT outputs per block
+    "get_info": "/json_rpc",                        # line 167
+    "get_connections": "/json_rpc",                 # line 166, hidden on a restricted port
+    "get_transaction_pool_stats": "/get_transaction_pool_stats",    # line 129
+    "get_transaction_pool_hashes": "/get_transaction_pool_hashes",  # line 128
+    "get_net_stats": "/get_net_stats",              # line 134, hidden on a restricted port
+    "get_block_headers_range": "/json_rpc",         # line 162
+    "get_last_block_header": "/json_rpc",           # line 156
+    "sync_info": "/json_rpc",                       # line 179, hidden on a restricted port
+    "get_bans": "/json_rpc",                        # line 170, hidden on a restricted port
+    "hard_fork_info": "/json_rpc",                  # line 168
+    "get_fee_estimate": "/json_rpc",                # line 176
+    "get_limit": "/get_limit",                      # line 135
+    "get_version": "/json_rpc",                     # line 174
+    "get_output_distribution": "/json_rpc",         # line 181; the black marble watch (flood.py)
     # read-only console commands
-    "get_height": "/get_height",
-    "mining_status": "/mining_status",
-    "get_block": "/json_rpc",
-    "get_block_header_by_hash": "/json_rpc",
-    "get_alternate_chains": "/json_rpc",
-    "get_coinbase_tx_sum": "/json_rpc",
-    "get_output_histogram": "/json_rpc",
-    "get_transactions": "/get_transactions",
-    "is_key_image_spent": "/is_key_image_spent",
-    "get_transaction_pool": "/get_transaction_pool",
-    "get_peer_list": "/get_peer_list",
-    "banned": "/json_rpc",
-    "rpc_access_data": "/json_rpc",
+    "get_height": "/get_height",                    # line 101
+    "mining_status": "/mining_status",              # line 119, hidden on a restricted port
+    "get_block": "/json_rpc",                       # line 164
+    "get_block_header_by_hash": "/json_rpc",        # line 158
+    "get_alternate_chains": "/json_rpc",            # line 177, hidden on a restricted port
+    "get_coinbase_tx_sum": "/json_rpc",             # line 175, hidden on a restricted port
+    "get_output_histogram": "/json_rpc",            # line 173
+    "get_transactions": "/get_transactions",        # line 111
+    "is_key_image_spent": "/is_key_image_spent",    # line 114
+    "get_transaction_pool": "/get_transaction_pool",    # line 126, hidden on a restricted port
+    "get_peer_list": "/get_peer_list",              # line 121, hidden on a restricted port
+    "banned": "/json_rpc",                          # line 171, hidden on a restricted port
+    "rpc_access_data": "/json_rpc",                 # line 188, hidden on a restricted port
 }
-
-# Methods that can change something on the node. Only call_write() sends them, and it
-# only answers memstara.commands. (prune_blockchain with check: true, update with
-# "check" and out_peers/in_peers with set: false only read, but it's the same method.)
-WRITE_ALLOWED = {
-    "save_bc": "/save_bc",
-    "stop_daemon": "/stop_daemon",
-    "update": "/update",
-    "pop_blocks": "/pop_blocks",
-    "prune_blockchain": "/json_rpc",
-    "relay_tx": "/json_rpc",
-    "flush_txpool": "/json_rpc",
-    "set_limit": "/set_limit",
-    "out_peers": "/out_peers",
-    "in_peers": "/in_peers",
-    "set_bootstrap_daemon": "/set_bootstrap_daemon",
-    "set_bans": "/json_rpc",
-    "flush_cache": "/json_rpc",
-    "start_mining": "/start_mining",
-    "stop_mining": "/stop_mining",
-    "set_log_hash_rate": "/set_log_hash_rate",
-    "set_log_level": "/set_log_level",
-    "set_log_categories": "/set_log_categories",
-}
-WRITE_CALLERS = ("memstara.commands",)
 
 
 MAX_ANSWER_BYTES = 32 * 1024 * 1024
@@ -233,22 +209,12 @@ class RpcClient:
         h = self.host if ":" not in self.host else "[%s]" % self.host
         return "%s://%s:%d%s%s" % (self.scheme, h, self.port, self.base_path, path)
 
-    # ---- the two entry points
+    # ---- the one entry point
     def call(self, method: str, params: dict | None = None) -> dict:
-        """Call a read-only allowlisted method and return its result object (status "OK")."""
+        """Call a method on READ_ALLOWED and return its result object (status "OK")."""
         if not isinstance(method, str) or method not in READ_ALLOWED:
             raise RpcNotAllowed(method)
         return self._call(method, READ_ALLOWED[method], params)
-
-    def call_write(self, method: str, params: dict | None = None) -> dict:
-        """Call a method that can change the node. Only WRITE_ALLOWED, only from memstara.commands."""
-        if not isinstance(method, str) or method not in WRITE_ALLOWED:
-            raise RpcNotAllowed(method, "%s isn't on the dashboard's write list, so it was not sent"
-                                % _clean(method, 60))
-        caller = sys._getframe(1).f_globals.get("__name__")
-        if caller not in WRITE_CALLERS:
-            raise RpcNotAllowed(method, "%s can only be sent by a confirmed command, so it was not sent" % method)
-        return self._call(method, WRITE_ALLOWED[method], params)
 
     def _call(self, method, endpoint, params):
         if endpoint == "/json_rpc":
