@@ -366,12 +366,14 @@ class Poller:
         node = adapter.parse_info(info, now, vals["thresholds.out_wanted"])
         restricted = node.pop("_restricted")
         median_weight = node.pop("_median_weight")
+        max_weight = node.pop("_max_weight")
         target_s = node.pop("_target_s")
         bootstrap = node.pop("_bootstrap")
         if bootstrap is not None:
             restricted = bool(self.restricted_prev)   # that node's answer says nothing about this port
         parts["restricted"] = restricted
         parts["median_weight"] = median_weight
+        parts["max_weight"] = max_weight
         parts["target_s"] = target_s
         parts["bootstrap"] = bootstrap
         if self.answering_prev is None:
@@ -800,6 +802,7 @@ class Poller:
             "blocks": blocks,
             "avg_interval_s": adapter.avg_interval(blocks),
             "median_weight": parts.get("median_weight") if answering else None,
+            "max_weight": parts.get("max_weight") if answering else None,
             "wait_odds": adapter.wait_odds(node.get("last_block_age_s"), parts.get("target_s") or 120),
             # unknown (None) until the node has answered once: "none replaced" would be a guess
             "reorg": {"deepest_24h": max([r["depth"] for r in recent], default=0) if self.last_ok else None,
@@ -911,7 +914,7 @@ class Poller:
                        "restricted": False, "last_ok": None, "poll_s": vals["source.refresh_s"],
                        "host_name": self.host_name, "dashboard_version": VERSION, "bootstrap": None},
             "node": node,
-            "chain": {"blocks": [], "avg_interval_s": None, "median_weight": None, "wait_odds": None,
+            "chain": {"blocks": [], "avg_interval_s": None, "median_weight": None, "max_weight": None, "wait_odds": None,
                       "reorg": {"deepest_24h": None, "last": None}, "sync": None,
                       "flood": {"state": "off", "why": "starting"}},
             "peers": adapter.empty_peers(),

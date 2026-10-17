@@ -77,6 +77,8 @@ def parse_info(info: dict, now: float, out_wanted: int) -> dict:
         "update_available": None if restricted else as_bool(info.get("update_available")),
         "_restricted": restricted,
         "_median_weight": as_int(info.get("block_weight_median")) or as_int(info.get("block_size_median")),
+        # the biggest block the next one may be: twice the median (blockchain.cpp)
+        "_max_weight": as_int(info.get("block_weight_limit")) or as_int(info.get("block_size_limit")),
         "_target_s": target_s,
         "_bootstrap": None,
     }

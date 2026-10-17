@@ -76,6 +76,9 @@ export function renderChain(snap, offset) {
     setText($("chain-reorg"), `${r.deepest_24h} AT ONCE${last}`);
   } else setText($("chain-reorg"), f.isNum(r.deepest_24h) ? "NONE" : "—");
   setText($("chain-hash"), f.hashrate(node.hashrate));
+  // the block size limit moves with use: full reward up to the median, nothing bigger than twice it
+  setText($("chain-median"), f.bytes(chain.median_weight));
+  setText($("chain-size"), f.bytes(chain.max_weight));
   const shown = (chain.blocks || []).length;
   setText($("chain-sub"), `FROM YOUR NODE · LAST ${f.plural(shown, "BLOCK", "BLOCKS")} · NEWEST ON THE RIGHT`);
 

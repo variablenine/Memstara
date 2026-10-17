@@ -32,6 +32,7 @@ class InfoTest(unittest.TestCase):
         self.assertEqual(n["top_hash"], info["top_block_hash"])
         self.assertFalse(n["_restricted"])
         self.assertEqual(n["_median_weight"], 300000)
+        self.assertEqual(n["_max_weight"], 600000)
 
     def test_restricted_port(self):
         info = fixture("get_info_restricted.json")
@@ -63,7 +64,7 @@ class InfoTest(unittest.TestCase):
         self.assertEqual(n["sync_pct"], round(3775041 * 100.0 / info["height"], 2))
         self.assertEqual((n["_bootstrap"], n["_restricted"], n["out_wanted"]), ("node.example.org:18089", False, 32))
         for k in ("version", "nettype", "started", "top_hash", "difficulty", "out_peers", "in_peers", "tx_pool",
-                  "free_bytes", "db_bytes", "update_available", "_median_weight"):
+                  "free_bytes", "db_bytes", "update_available", "_median_weight", "_max_weight"):
             self.assertIsNone(n[k], k)
         self.assertEqual(set(n), set(adapter.parse_info(fixture("get_info.json"), NOW, 32)))
         self.assertIsNone(adapter.parse_info(fixture("get_info.json"), NOW, 32)["_bootstrap"])

@@ -418,6 +418,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
     ],
     "avg_interval_s": 119.4,           // over the blocks listed
     "median_weight": 300000,           // get_info.block_weight_median
+    "max_weight": 600000,              // get_info.block_weight_limit (twice the median)
     "wait_odds": 0.43,                 // chance a block takes at least this long: exp(-age/120)
     "reorg": {"deepest_24h": 0, "last": null}, // last = {"time", "depth", "height"} or null;
                                        // deepest_24h is null until the node first answers

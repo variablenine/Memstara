@@ -129,6 +129,7 @@ class SnapshotTest(unittest.TestCase):
         # the black marble watch reads a year of output counts, 40,000 blocks a poll
         self.assertEqual(chain["flood"], {"state": "filling", "progress": 0.3})
         self.assertEqual(chain["median_weight"], 300000)
+        self.assertEqual(chain["max_weight"], 600000)
         self.assertEqual(set(snap["peers"]), {"list", "spread", "out_by_kind", "in_by_kind"})
         self.assertEqual(len(snap["peers"]["list"]), 54)
         self.assertIn("histo_98pc", snap["mempool"])
