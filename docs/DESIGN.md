@@ -26,9 +26,10 @@ and the tests (`tests/`). If code and this file disagree, fix one of them.
   (`src/daemon/rpc_command_executor.cpp`: each one either sends that RPC
   request or calls the same handler in-process), so the unrestricted RPC port
   gives the dashboard the same view and the same powers as the console. The RPC
-  client only sends methods that some console command sends, plus two
-  read-only ones the poller uses. Changes need a typed confirm word. See
-  **Commands**.
+  client only sends methods that some console command sends, plus four
+  read-only ones the poller uses (`get_last_block_header`, `get_version`,
+  `get_transaction_pool_hashes` and `get_output_distribution`). Changes need a
+  typed confirm word. See **Commands**.
 - **Live from the start.** There is no pretend node. The dashboard reads the
   real `monerod` at `source.rpc_url`. Tests use a small canned-answer fake in
   `tests/` that never ships as a feature.
@@ -290,6 +291,10 @@ Read allowlist (anything not on this list or the write list below raises
 | `get_fee_estimate` | `/json_rpc` | every 60 s | fee per byte, 4 priority tiers |
 | `get_limit` | `/get_limit` | every 10 min | bandwidth limits |
 | `get_version` | `/json_rpc` | on start, then every 10 min | RPC version number |
+| `get_transaction_pool_hashes` | `/get_transaction_pool_hashes` | when the mempool's totals change, while details are owed, and at least every 10 s | every waiting transaction (`memstara/pool.py`) |
+| `get_transactions` | `/get_transactions` | once for each new waiting transaction, up to 100 per call and 200 per poll | its fee, weight and arrival time |
+| `get_block` | `/json_rpc` | when a block arrives | which waiting transactions it took |
+| `get_output_distribution` | `/json_rpc` | a year of blocks once (40,000 per poll), then the newest 30 when the top changes | RingCT outputs per block for the black marble watch (see **Black marble watch**) |
 
 Facts checked in Monero's source (`src/rpc/core_rpc_server.h`,
 `core_rpc_server.cpp`, `core_rpc_server_commands_defs.h`, tag v0.18.5.3):
@@ -316,8 +321,10 @@ Facts checked in Monero's source (`src/rpc/core_rpc_server.h`,
   or `--bootstrap-daemon-address`) and is more than 10 blocks behind it,
   monerod passes `get_info`, `get_last_block_header`,
   `get_block_headers_range`, `get_transaction_pool_stats`,
-  `get_fee_estimate`, `get_limit`, `hard_fork_info` and `get_version` on to
-  that node and marks the answer `untrusted: true`
+  `get_transaction_pool_hashes`, `get_transactions`, `get_block`,
+  `get_output_distribution`, `get_fee_estimate`, `get_limit`,
+  `hard_fork_info` and `get_version` on to that node and marks the answer
+  `untrusted: true`
   (`use_bootstrap_daemon_if_necessary`); `get_info` then also carries
   `height_without_bootstrap` (the node's own height) and
   `bootstrap_daemon_address`. `get_connections`, `get_net_stats`, `get_bans`
@@ -327,7 +334,7 @@ Facts checked in Monero's source (`src/rpc/core_rpc_server.h`,
   (outgoing and incoming counts come from `get_connections` instead). It
   doesn't send the passed-on calls: the block tape, reorg watch, mempool, fee,
   limits, rules version and RPC version keep the node's own last readings or
-  stay `null`. The port isn't taken for restricted, `source.bootstrap` holds
+  stay `null`, and the black marble watch waits. The port isn't taken for restricted, `source.bootstrap` holds
   that node's address, and a `source` event says when it starts ("Syncing
   with help from X: its answers aren't shown as your node's") and stops. The
   new-block clock (`no_blocks`, the NEW BLOCK lamp) runs from the last change
@@ -414,8 +421,9 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
     "wait_odds": 0.43,                 // chance a block takes at least this long: exp(-age/120)
     "reorg": {"deepest_24h": 0, "last": null}, // last = {"time", "depth", "height"} or null;
                                        // deepest_24h is null until the node first answers
-    "sync": null                       // while syncing (sync_info): {"height", "target_height",
+    "sync": null,                      // while syncing (sync_info): {"height", "target_height",
                                        // "spans", "blocks_queued", "peers", "overview"}; null when synced
+    "flood": {"state": "ok", "rings": 14.7, ...}  // the black marble watch, see **Black marble watch**
   },
   "peers": {
     "list": [
@@ -463,7 +471,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
      "text": "Only 6 of 32 outgoing connections for 12 min",
      "since": 1759699000, "source": "dashboard", "ips": null}   // source: "dashboard" or an add-on's name
   ],
-  "lamps": [                           // the annunciator wall: the 11 core lamps in this order, then add-on lamps
+  "lamps": [                           // the annunciator wall: the 12 core lamps in this order, then add-on lamps
     {"id": "node", "label": "NODE", "state": "ok", "value": "ANSWERING", "since": null},
     {"id": "example.thing", "label": "THING", "state": "warn", "value": "2 ALERTS", "since": 1759699000,
      "addon": "example", "help": "What it watches."}
@@ -487,7 +495,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
 ### Lamps (annunciator wall)
 
 `state` is one of `ok`, `warn`, `bad`, `off` (not set up / not known). Always
-these 11, in this order, then each enabled add-on's lamps (ids
+these 12, in this order, then each enabled add-on's lamps (ids
 `<name>.<id>`, in add-on name order; see **Core and add-ons**). `value` is a
 short plain-language reading (at most about 14 characters, uppercase).
 
@@ -504,6 +512,7 @@ short plain-language reading (at most about 14 characters, uppercase).
 | `spread_out` | ECLIPSE · OUT | 5+ outgoing from one network for 10 min | RPC |
 | `spread_in` | ECLIPSE · IN | 4+ incoming from one network for 10 min | RPC |
 | `tor` | TOR SENDING | Tor sending on but 0 Tor peers for 10 min | RPC, node flags |
+| `flood` | BLACK MARBLE | a new 16-member ring works like under 11 / 8 members for 30 min | RPC |
 
 An add-on lamp's `since` is tracked the same way; when an add-on is turned
 off its lamps go and their `since` starts afresh if it comes back.
@@ -542,6 +551,7 @@ Rules (thresholds are settings):
 | `restarts` | warn | ≥ `restart_warn` 3 changes of `start_time` within 1 h | | |
 | `spread_out` | warn | ≥ `out16_warn` 5 outgoing IPv4 peers in one x.y network | `grace.spread_min` 10 min | |
 | `spread_in` | warn | ≥ `in24_warn` 4 incoming IPv4 peers in one x.y.z network | `grace.spread_min` 10 min | |
+| `flood` | warn / bad | the black marble watch's estimate: a new transaction's 16-member ring works like fewer than `flood_warn` 11 / `flood_bad` 8 members (see **Black marble watch**) | `grace.flood_min` 30 min | |
 | `tor` | warn | `tor_sending` setting is `on` (or `auto` and: when the running node is found, it was started with `--tx-proxy tor,...`, read from its flags, see **Finding the node**; when it isn't found, Tor peers were seen since the node last started) and 0 outgoing Tor peers | `grace.tor_min` 10 min | |
 | `cpu_temp` | warn / bad | hottest CPU sensor ≥ 85 / 95 °C (185 / 203 °F) | 2 min | |
 | `memory` | warn | ≥ 90% of the computer's memory in use | 5 min | |
@@ -555,7 +565,11 @@ texts give temperatures in the `display.temp_unit` setting; under `auto` the
 server can't see the screens' language, so it gives both, °F first.
 
 While the node isn't answering, only `node_down` and the computer's own alerts
-are raised (other RPC rules pause rather than firing on missing data). Alert
+are raised (other RPC rules pause rather than firing on missing data).
+`flood` also pauses while the watch has no estimate (the node syncing, using a
+bootstrap node, or the year still being read), and keeps how long it has been
+under its limits: the estimate moves slowly, so one that comes back still under
+them carries on where it was, without a second "raised" event. Alert
 texts are plain language.
 Raising or clearing an alert adds an event.
 
@@ -574,6 +588,138 @@ are summarised ("3 joined · 1 left") instead of one line each: the first change
 after a quiet spell at once, then at most one event per 5 seconds, and a peer
 that leaves and comes back in between isn't counted. Kept
 in memory (last 200).
+
+## Black marble watch (`memstara/flood.py`)
+
+A black marble flood is one sender making a great many outputs (paying
+themselves over and over) so that other people's wallets pick theirs as
+decoys. Every decoy the sender owns is one they know isn't the coin being
+spent, so a 16-member ring hides it among fewer members. Nobody can see who
+owns an output, so the watch can only estimate: how much of a new
+transaction's decoys a recent surge of new outputs would supply, and what its
+ring works like if one sender made the whole surge. It follows Rucknium's
+study of the suspected flood of March 2024, ["March 2024 Suspected Black Marble
+Flooding Against Monero: Privacy, User Experience, and
+Countermeasures"](https://github.com/Rucknium/misc-research/blob/main/Monero-Black-Marble-Flood/pdf/monero-black-marble-flood.pdf)
+(draft v0.3, October 2024), which put a new ring at about 5.5 members within
+five days, if one sender made the extra transactions. That study picked out
+the suspected spam by its shape (1 input, 2 outputs, the lowest fee) against
+the four weeks before; a watch running every day knows neither, so it counts
+every new output above a usual day.
+
+Each time the top block changes:
+
+1. **Counts.** `get_output_distribution` with `amounts: [0]` and
+   `cumulative: false` gives the RingCT outputs each block made: the counts
+   wallets read to pick decoys (they ask for them from block 0, added up). A
+   restricted RPC port answers it too: monerod limits restricted ports to
+   amount 0, which is all the watch asks for. The first reading takes the last
+   262,809 blocks (a year, plus the 9 newest, which a wallet can't pick from
+   yet), 40,000 per poll; after that only the newest 30, which also catches
+   blocks replaced at the top. Each answer's `base` (the outputs before its
+   first block) must equal what was kept, or deeper blocks changed and the
+   year is read again. After a few days it keeps 2,000 blocks beyond the year,
+   so a chain that gets a little shorter (blocks popped) needs no new read.
+2. **A usual day**: the median of the last 180 days' totals (720 blocks a
+   day).
+3. **Where wallets pick decoys** (`gamma_picker` in `src/wallet/wallet2.cpp`,
+   v0.18.5.3): an age whose logarithm is gamma distributed (shape 19.28, rate
+   1.61), less the 20-minute unlock time (an age under it becomes a random one
+   in the newest 30 minutes). The age becomes a number of outputs back from
+   the newest block a wallet can pick from (top − 9) at the chain's average
+   time per output over the last year (`120 × 262,800 ÷ outputs in the last
+   year` seconds), then a random output of the block holding that one. The
+   watch uses this distribution exactly (`picked_cdf`) instead of drawing
+   from it. About 54% of picks land within 2 days of the top, 75% within 10
+   days, and under 4% further back than a year.
+4. **The surge's share** `p`: the newest 48 hours an hour (30 blocks) at a
+   time, then a day (720 blocks) at a time back to a year. In each stretch
+   the outputs above the usual rate count as the surge's, so a pick landing
+   there lands on one of them with chance `1 − usual ÷ outputs`; `p` adds that
+   up, weighted by how often picks land in the stretch. A quiet stretch counts
+   against the surge, so the normal ups and downs cancel out, and `p` is kept
+   between 0 and 1. Outputs older than a year count as nobody's.
+5. **The ring**: `1 + 15 × (1 − p)` members the sender doesn't own, the real
+   coin among them (the study's step 5: one plus 15 times the chance that a
+   decoy isn't the sender's).
+
+`snapshot.chain.flood`:
+
+```jsonc
+{"state": "ok",                // "ok" | "filling" | "off" | "error"
+ "height": 3783389,            // the top block it was worked out for
+ "rings": 14.7,                // 1 + 15 × (1 − share), one decimal
+ "share": 0.088,               // the surge's share of a new transaction's decoys, 0 to 1
+ "usual_day": 69220,           // outputs on a usual day (the median of the last 180)
+ "last_day": 80295,            // outputs in the newest 720 blocks
+ "volume_x": 1.16,             // last_day ÷ usual_day
+ "days": [68800, ...],         // the last 30 days' totals, oldest first
+ "why": null}                  // with "ok": the last read's failure in a few words, if it failed
+```
+
+Without an estimate: `{"state": "filling", "progress": 0.46}` while the year
+is read; `{"state": "off", "why": ...}` with `starting` (no reading yet),
+`sync` (the node isn't synced), `bootstrap` (monerod answers through a
+bootstrap node, so the counts would be that node's) or `short` (less than a
+year of RingCT outputs, as on a new test network); `{"state": "error", "why":
+"no answer in 8 s"}` when reading failed. After a failed read it tries again
+in 60 s (10 min after `short`) and keeps showing the last estimate, with
+`why`, until it is more than 30 blocks behind the node's top.
+
+The BLACK MARBLE lamp reads `RING ≈ 15 OF 16`, or, unlit, `READING 46%`,
+`WAITS FOR SYNC`, `CHAIN TOO SHORT`, `CAN'T READ` or `NO DATA`. The `flood`
+alert is a heads-up under `thresholds.flood_warn` (11) and a problem under
+`thresholds.flood_bad` (8), each after `grace.flood_min` (30 min): "A recent
+surge of new outputs would supply about 63% of a new transaction's decoys. If
+one sender made them, its 16-member ring works like about 6", and as a
+problem, ": payments where privacy matters can wait for it to clear". Panel L
+is on the CHAIN screen (see **Screens**).
+
+Checked against Monero's main chain: the counts from block 1,400,000 (2017)
+to 3,783,400 (October 2026), read from a public node with the same call, and
+one estimate every 6 hours from September 19, 2018 (11,782 in all). Every year
+is worked out as today's wallets would build a ring, with 16 members (rings had
+11 until the network upgrade of August 13, 2022):
+
+| year | under 11 | under 8 | lowest | |
+|---|---|---|---|---|
+| 2018 (from Sep 19) | 0% | 0% | 12.6 | |
+| 2019 | 18.2% | 1.9% | 6.6 (May 4) | a surge through May and June; no published cause found |
+| 2020 | 5.9% | 0% | 9.6 | short spells |
+| 2021 | 0% | 0% | 11.0 | |
+| 2022 | 0.5% | 0% | 9.4 (Aug 14) | August 13 and 14, around that upgrade |
+| 2023 | 0.8% | 0% | 10.3 (Dec 22) | December 20 to 23; no published cause found |
+| 2024 | 19.9% | 8.0% | 5.2 (Mar 26) | the suspected flood: under 11 from March 4, under 8 from March 6 to 27 (72% of decoys, 4.7 × a usual day at the lowest); more waves in April, May and June |
+| 2025 | 0% | 0% | 13.1 | |
+| 2026 (to Oct 12) | 0% | 0% | 12.0 | |
+
+Why 180 days: in a run comparing usual days (an estimate every 12 hours from
+October 2019), the median of 365 days lit the heads-up for 37.7% of 2020 and
+24.9% of 2021, as use grew steadily, and 82.7% of March 4 to June 15, 2024
+(49.5% at the problem level). 180 days: 6.7% and 0%, and 70.2% of the flood
+(30.3%). 90 days: under 1% in every normal year, but only 40.9% of the flood
+(21.2%), since a long flood soon becomes its own usual day.
+
+What it can't do:
+
+- Tell a flood from a busy spell of ordinary use, or see who made the
+  outputs: both are outputs above a usual day. "If one sender made the surge"
+  is the worst case, not a finding.
+- Keep noticing a flood past about three months: by then it fills half of
+  the 180 days and becomes the usual day.
+- Count anything older than a year (wallets rarely pick there).
+- Help after Monero's planned FCMP++ upgrade, which proves a spend against
+  every output on the chain instead of a 16-member ring ([Monero's FCMP++
+  post](https://www.getmonero.org/2024/04/27/fcmps.html): "from an immediate
+  anonymity set of 16 to 100,000,000"). The watch has nothing to measure
+  then.
+
+monerod keeps one cache of these counts for every caller
+(`RpcHandler::get_output_distribution` in `src/rpc/rpc_handler.cpp`) and
+replaces it with each request for a different range. The watch asks once a
+block, so a wallet building a transaction through the same node right after
+makes it count from block 0 again instead of adding the newest blocks to its
+cache.
 
 ## History (`GET /api/history?window=<seconds>`)
 
@@ -636,6 +782,8 @@ Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 | `thresholds.out16_warn` | int 2-100 | 5 | |
 | `thresholds.in24_warn` | int 2-100 | 4 | |
 | `thresholds.restart_warn` | int 2-100 | 3 | |
+| `thresholds.flood_warn` | int 2-16 | 11 | black marble heads-up: a new ring works like fewer members than this, of 16 |
+| `thresholds.flood_bad` | int 1-15 | 8 | must be < warn |
 | `thresholds.tor_sending` | choice auto/on/off | `auto` | |
 | `grace.node_down_min` | int 0-120 | 5 | |
 | `grace.no_peers_min` | int 0-120 | 5 | no outgoing at all |
@@ -643,6 +791,7 @@ Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 | `grace.syncing_min` | int 0-240 | 20 | |
 | `grace.spread_min` | int 0-120 | 10 | |
 | `grace.tor_min` | int 0-120 | 10 | |
+| `grace.flood_min` | int 0-1440 | 30 | |
 | `display.layout` | choice tabs/page | `tabs` | one screen at a time, or every screen on one page |
 | `display.accent` | choice | `amber` | the look: `amber` (gold light, cyan headings), `phosphor` (green), `ice` (cyan), `bone` (warm white), `violet`, `monero` (orange). The heads-up and problem colours change with it so they never clash with its accent (see docs/STYLE.md) |
 | `display.clock` | choice 12h/24h | `12h` | |
@@ -664,7 +813,7 @@ Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 | `server.port` | int 1024-65535 | 18200 | the window's local port; takes effect the next time the app starts |
 
 Panel ids (core): `lamps`, `chain`, `peers`, `route`, `controls`, `traffic`,
-`history`, `mempool`, `events`, `computer`, `system`. Add-on panels are shown
+`history`, `mempool`, `events`, `computer`, `system`, `flood`. Add-on panels are shown
 or hidden with their add-on's `<addon>.enabled`.
 
 ## HTTP API and safety rules
@@ -1141,7 +1290,7 @@ a responsive grid (three columns wide, two below 1400 px, one when narrow).
 |---|---|---|
 | 01 STATUS | NODE STATUS: a ring with one segment per lamp (lit ▲ / ■ when not ok; click one to open the screen that explains it), arcs for outgoing peers, sync and disk, the height and the time since the last block in the middle, and quick readouts that open their screens | A lamp wall, add-on panels |
 | 02 NETWORK | NODE TREE: a 3D tree you can turn and zoom. Your node at the top, then outgoing / incoming / Tor, then peers on one company's servers grouped, then every peer. Dots running along the branches are the bytes each peer really moved since the last reading; busy peers are lit, quiet ones dim. LIVE CHATTER beside it is a log of peers joining and leaving, blocks, bans, the busiest peers and the pool, newest at the bottom | C peer scope, D route |
-| 03 CHAIN | BLOCK STREAM: the last blocks as 3D boxes receding into the distance, sized by weight and spaced by the wait before each, with a ghost NEXT BLOCK and its timer; blocks replaced flash ▲ | B chain, K system |
+| 03 CHAIN | BLOCK STREAM: the last blocks as 3D boxes receding into the distance, sized by weight and spaced by the wait before each, with a ghost NEXT BLOCK and its timer; blocks replaced flash ▲ | B chain, K system, L black marble watch |
 | 04 MEMPOOL | TRANSACTION POOL: one dot per waiting transaction in bands by how long it has waited; dots drop in as they arrive and leave in a block-shaped sweep | H mempool |
 | 05 TRAFFIC | LIVE TRAFFIC: a scope of download and upload over 15 minutes, with the node's limits when they are near, and flow lanes whose dots speed up with the data | F traffic, G history |
 | 06 COMPUTER | GAUGES: dials for CPU temperature, monerod's CPU, memory, how busy the chain's drive is and disk free, each with its last 15 minutes where kept | J computer |
@@ -1169,7 +1318,7 @@ The older panels, by letter:
   badge with the RPC address, local clock, COMMANDS and SETTINGS buttons.
   **Alerts strip** below it: active alerts, problems first. **Status bar** at
   the bottom: RPC address, answer time, poll, add-ons.
-- **A · Lamp wall** (`lamps`): the 11 core lamps, then add-on lamps. Lit in
+- **A · Lamp wall** (`lamps`): the 12 core lamps, then add-on lamps. Lit in
   the heads-up or problem colour with ▲ / ■ when not ok. New problem lamps
   flash until clicked (acknowledging is only a screen state and changes
   nothing on the node). Each lamp's tooltip says what it watches (add-on lamps
@@ -1213,6 +1362,13 @@ The older panels, by letter:
   95 °C; `display.temp_unit` picks °F or °C.
 - **K · System** (`system`): version, uptime, disk free / blockchain size,
   bans, network rules version, fee estimate, RPC answer time.
+- **L · Black marble watch** (`flood`, full width): what a new 16-member ring
+  works like if one sender made the recent surge of new outputs, as a number
+  and as 16 dots (the real coin, the decoys from a usual day's outputs, and
+  hollow ones for the surge's), then the share of decoys from the surge, the
+  last 24 hours against a usual day, the limits, and the last 30 days of new
+  outputs as bars split at a usual day (with a table view). While the year is
+  being read it shows how far along it is; otherwise why there's no reading.
 - **Command drawer**: every monerod console command, grouped, searchable,
   each with a form for its arguments and its answer drawn as tables; plus log
   views (monerod's, and any an add-on offers). Change commands open a confirm

@@ -14,7 +14,7 @@ from .util import clock_style, clock_text
 # every id the core raises itself: from the node's RPC, then from this computer's own
 # readings (local reads), which go on whether or not the node answers
 RPC_IDS = ("node_down", "peers", "syncing", "no_blocks", "disk", "reorg",
-           "double_spend", "restarts", "spread_out", "spread_in", "tor")
+           "double_spend", "restarts", "spread_out", "spread_in", "tor", "flood")
 COMPUTER_IDS = ("cpu_temp", "memory", "power")
 DASHBOARD_IDS = RPC_IDS + COMPUTER_IDS
 
@@ -30,6 +30,7 @@ TITLES = {
     "spread_out": "ECLIPSE WATCH · OUT",
     "spread_in": "ECLIPSE WATCH · IN",
     "tor": "NO TOR CONNECTIONS",
+    "flood": "BLACK MARBLE WATCH",
     "cpu_temp": "CPU HOT",
     "memory": "MEMORY ALMOST FULL",
     "power": "ON BATTERY",
@@ -51,9 +52,9 @@ def title_for(alert_id: str, level: str | None = None) -> str:
 DEFAULT_CFG = {
     "out_wanted": 12, "low_peers": 8, "no_block_warn_min": 30, "no_block_bad_min": 60,
     "disk_warn_gb": 20, "disk_bad_gb": 5, "reorg_warn": 3, "reorg_bad": 10,
-    "out16_warn": 5, "in24_warn": 4, "restart_warn": 3,
+    "out16_warn": 5, "in24_warn": 4, "restart_warn": 3, "flood_warn": 11, "flood_bad": 8,
     "node_down_min": 5, "no_peers_min": 5, "peers_min": 10, "syncing_min": 20,
-    "spread_min": 10, "tor_min": 10,
+    "spread_min": 10, "tor_min": 10, "flood_min": 30,
     # this computer (no settings for these; web/js/panels/computer.js draws the same limits):
     # most processors slow themselves down to cool off at about 95 to 105 °C
     "temp_warn_c": 85, "temp_bad_c": 95, "mem_warn_pct": 90, "battery_bad_pct": 20,
@@ -101,6 +102,12 @@ def tor_sending_active(setting: str, tor_seen: bool, tx_proxy_tor) -> bool:
     return bool(tor_seen)
 
 
+def flood_text(fl: dict) -> str:
+    """The black marble watch's alert, from snapshot.chain.flood."""
+    return ("A recent surge of new outputs would supply about %d%% of a new transaction's decoys. If one "
+            "sender made them, its 16-member ring works like about %d" % (round(fl["share"] * 100), round(fl["rings"])))
+
+
 def empty_obs() -> dict:
     return {
         "answering": False, "error_short": None, "restricted": False,
@@ -109,6 +116,7 @@ def empty_obs() -> dict:
         "block_seen_age": None, "free_bytes": None,
         "reorgs": [], "double_spends": None, "restarts": [],
         "out16": None, "in24": None,
+        "flood": None,          # snapshot.chain.flood (flood.py)
         "computer": None,       # snapshot.host.computer, or None when this computer isn't read
         "addon_alerts": {},     # {add-on name: [alert] or None}; see AlertEngine.evaluate
     }
@@ -395,3 +403,19 @@ class AlertEngine:
             if d is not None and d >= grace("tor_min"):
                 add("tor", "warn", "No Tor connections for %d min: transactions you send will wait until "
                     "one connects" % mins(d), now - d)
+
+        # ---- black marble watch: a surge of new outputs that a new transaction's decoys would come from.
+        # Without an estimate (the node catching up or restarting) its clocks are kept, not reset:
+        # the estimate moves slowly, so one that comes back under the limit carries on as it was
+        fl = obs.get("flood") or {}
+        rings = fl.get("rings")
+        if fl.get("state") != "ok" or not isinstance(rings, (int, float)):
+            paused.add("flood")
+        else:
+            w = self._held("flood_warn", rings < cfg["flood_warn"], now)
+            b = self._held("flood_bad", rings < cfg["flood_bad"], now)
+            if b is not None and b >= grace("flood_min"):
+                add("flood", "bad", flood_text(fl) + ": payments where privacy matters can wait for it to clear",
+                    now - b)
+            elif w is not None and w >= grace("flood_min"):
+                add("flood", "warn", flood_text(fl), now - w)

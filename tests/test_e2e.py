@@ -29,7 +29,7 @@ POOL_LIST_KEYS = {"list", "list_wanted", "list_cut", "mined", "check"}
 SOURCE_KEYS = {"mode", "rpc", "answering", "error", "latency_ms", "restricted", "last_ok", "poll_s",
                "host_name", "dashboard_version", "bootstrap"}
 LAMP_IDS = ["node", "peers", "sync", "block", "disk", "reorg", "double_spend", "restarts", "spread_out", "spread_in",
-            "tor"]
+            "tor", "flood"]
 HOST_KEYS = {"ok", "error", "every_s", "t", "proc", "proc_error", "computer", "bind_if", "tor"}
 
 
@@ -126,6 +126,8 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(len(chain["blocks"]), 60)
         self.assertEqual(chain["blocks"][-1]["height"], rig.fake.top)
         self.assertEqual(chain["reorg"], {"deepest_24h": 0, "last": None})
+        # the black marble watch reads a year of output counts, 40,000 blocks a poll
+        self.assertEqual(chain["flood"], {"state": "filling", "progress": 0.3})
         self.assertEqual(chain["median_weight"], 300000)
         self.assertEqual(set(snap["peers"]), {"list", "spread", "out_by_kind", "in_by_kind"})
         self.assertEqual(len(snap["peers"]["list"]), 54)
@@ -157,7 +159,9 @@ class SnapshotTest(unittest.TestCase):
             self.assertIn(l["state"], ("ok", "warn", "bad", "off"))
             self.assertLessEqual(len(l["value"]), 16)
             self.assertEqual(l["value"], l["value"].upper())
-        self.assertTrue(all(l["state"] == "ok" for l in snap["lamps"]), lamps_by_id(snap))
+        self.assertTrue(all(l["state"] == "ok" for l in snap["lamps"] if l["id"] != "flood"), lamps_by_id(snap))
+        self.assertEqual((lamps_by_id(snap)["flood"]["state"], lamps_by_id(snap)["flood"]["value"]),
+                         ("off", "READING 30%"))
         kinds = [e["kind"] for e in snap["events"]]
         self.assertIn("block", kinds)
         self.assertEqual(snap["events"][-1]["kind"], "source")       # newest first
@@ -294,6 +298,42 @@ class RestrictedTest(unittest.TestCase):
             self.assertEqual(lamps["peers"]["state"], "off")
             self.assertIn("restricted RPC port", " ".join(e["text"] for e in snap["events"]))
             self.assertNotIn("get_connections", rig.fake.calls)
+            # a restricted port gives the RingCT output counts too (amount 0 only), so the black
+            # marble watch works there
+            for _ in range(6):
+                snap = rig.poll(5)
+            self.assertEqual(snap["chain"]["flood"]["state"], "ok")
+            self.assertEqual(lamps_by_id(snap)["flood"]["value"], "RING ≈ 16 OF 16")
+            self.assertTrue(all(p["amounts"] == [0] for m, p in rig.fake.requests if m == "get_output_distribution"))
+        finally:
+            rig.close()
+
+
+class FloodTest(unittest.TestCase):
+    def test_a_surge_of_outputs_lights_the_lamp_after_half_an_hour(self):
+        rig = Rig()
+        try:
+            top = rig.fake.top
+            rig.fake.floods.append((top - 3 * 720, top + 10 ** 6, 200))   # 3 days of 5 times the usual
+            for _ in range(7):                                           # a year, 40,000 blocks a poll
+                snap = rig.poll(5)
+            fl = snap["chain"]["flood"]
+            self.assertEqual((fl["state"], fl["height"], fl["volume_x"]), ("ok", top, 5.44))
+            self.assertLess(fl["rings"], 8)
+            self.assertEqual(lamps_by_id(snap)["flood"]["state"], "ok", "not lit before its 30 minutes")
+            snap = rig.poll(30 * 60)
+            a = alerts_by_id(snap)["flood"]
+            self.assertEqual((a["level"], a["title"]), ("bad", "BLACK MARBLE WATCH"))
+            self.assertTrue(a["text"].startswith("A recent surge of new outputs would supply about "), a["text"])
+            lamp = lamps_by_id(snap)["flood"]
+            self.assertEqual((lamp["state"], lamp["value"]), ("bad", "RING ≈ %d OF 16" % round(fl["rings"])))
+            # the next block: only the newest counts are read again
+            n = len(rig.fake.requests)
+            rig.fake.add_block(rig.clock() + 5)
+            snap = rig.poll(5)
+            reads = [p for m, p in rig.fake.requests[n:] if m == "get_output_distribution"]
+            self.assertEqual([(p["from_height"], p["to_height"]) for p in reads], [(top - 29, top + 1)])   # the newest 30 again
+            self.assertEqual(snap["chain"]["flood"]["height"], top + 1)
         finally:
             rig.close()
 
@@ -337,6 +377,8 @@ class BootstrapTest(unittest.TestCase):
                           texts)
             self.assertNotIn("restricted RPC port", " ".join(texts))
             self.assertEqual(lamps_by_id(snap)["node"]["value"], "ANSWERING")
+            self.assertEqual(snap["chain"]["flood"], {"state": "off", "why": "bootstrap"})
+            self.assertEqual(lamps_by_id(snap)["flood"]["value"], "WAITS FOR SYNC")
             # still syncing after the grace time: the alert fires; its height moving keeps no_blocks quiet
             for i in range(1, 5):
                 rig.fake.info["height_without_bootstrap"] = own + 10 * i

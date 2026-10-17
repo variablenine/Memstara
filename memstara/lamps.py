@@ -1,4 +1,4 @@
-"""The annunciator wall: the core's 11 lamps, always in this order, then add-on lamps.
+"""The annunciator wall: the core's 12 lamps, always in this order, then add-on lamps.
 
 state: ok | warn | bad | off. A lamp fed by an active alert carries that alert's
 level. `since` is when the lamp last left ok/off (null while ok or off). Add-on lamps
@@ -14,14 +14,14 @@ LAMPS = [
     ("node", "NODE"), ("peers", "OUTGOING"), ("sync", "SYNCED"), ("block", "NEW BLOCK"),
     ("disk", "DISK SPACE"), ("reorg", "BLOCKS REPLACED"), ("double_spend", "DOUBLE SPEND"),
     ("restarts", "RESTARTS"), ("spread_out", "ECLIPSE · OUT"), ("spread_in", "ECLIPSE · IN"),
-    ("tor", "TOR SENDING"),
+    ("tor", "TOR SENDING"), ("flood", "BLACK MARBLE"),
 ]
 LAMP_IDS = [i for i, _ in LAMPS]
 # lamp id -> alert ids that light it
 LAMP_ALERTS = {
     "node": ("node_down",), "peers": ("peers",), "sync": ("syncing",), "block": ("no_blocks",),
     "disk": ("disk",), "reorg": ("reorg",), "double_spend": ("double_spend",), "restarts": ("restarts",),
-    "spread_out": ("spread_out",), "spread_in": ("spread_in",), "tor": ("tor",),
+    "spread_out": ("spread_out",), "spread_in": ("spread_in",), "tor": ("tor",), "flood": ("flood",),
 }
 RANK = {"bad": 3, "warn": 2, "ok": 1, "off": 0}
 
@@ -151,6 +151,24 @@ def compute(ctx: dict) -> list[tuple[str, str, str]]:
         put("tor", "off", "NO DATA")
     else:
         put("tor", "ok", "%d TOR PEER%s" % (tor_out, "" if tor_out == 1 else "S"))
+
+    # ---- black marble watch: what a new transaction's 16-member ring works like (flood.py)
+    fl = chain.get("flood") or {}
+    st = fl.get("state")
+    if not live:
+        put("flood", "off", "NO DATA")
+    elif st == "ok" and isinstance(fl.get("rings"), (int, float)):
+        put("flood", "ok", "RING ≈ %d OF 16" % round(fl["rings"]))
+    elif st == "filling":
+        put("flood", "off", "READING %d%%" % round((fl.get("progress") or 0) * 100))
+    elif st == "off" and fl.get("why") in ("sync", "bootstrap"):
+        put("flood", "off", "WAITS FOR SYNC")
+    elif st == "off" and fl.get("why") == "short":
+        put("flood", "off", "CHAIN TOO SHORT")
+    elif st == "error":
+        put("flood", "off", "CAN'T READ")
+    else:
+        put("flood", "off", "NO DATA")
 
     return [(i, out[i][0], out[i][1]) for i in LAMP_IDS]
 

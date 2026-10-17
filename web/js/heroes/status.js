@@ -57,6 +57,7 @@ const LIT_GLOW = 0.7;          // a lit lamp at its brightest (0.3 + 0.4 pulse)
 const CORE_SCREEN = {
   node: "status", peers: "network", sync: "chain", block: "chain", disk: "chain", reorg: "chain",
   double_spend: "mempool", restarts: "status", spread_out: "network", spread_in: "network", tor: "network",
+  flood: "chain",
 };
 const SCREENS = ["status", "network", "chain", "mempool"];
 function screenFor(l) {

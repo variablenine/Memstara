@@ -68,7 +68,7 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual([k[7:] for k in d if k.startswith("panels.")], PANEL_IDS)
         self.assertIn("route", PANEL_IDS)
         self.assertEqual(PANEL_IDS, ["lamps", "chain", "peers", "route", "controls", "traffic", "history", "mempool",
-                                     "events", "computer", "system"])
+                                     "events", "computer", "system", "flood"])
         self.assertEqual(by_key["panels.computer"]["label"], "Computer")
         self.assertEqual(by_key["panels.controls"]["label"], "Controls")
         self.assertEqual(by_key["controls.enabled"]["label"], "Allow change commands")

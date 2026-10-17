@@ -20,7 +20,7 @@ from .util import atomic_write, config_dir, ensure_private_dir
 
 # the core panels, in grid order (A to K on the screens)
 PANEL_IDS = ["lamps", "chain", "peers", "route", "controls", "traffic", "history", "mempool", "events",
-             "computer", "system"]
+             "computer", "system", "flood"]
 
 SECTIONS = ["source", "local", "thresholds", "grace", "display", "panels", "chain", "controls", "node",
             "server"]
@@ -90,6 +90,11 @@ SCHEMA = [
        "Incoming connections from one x.y.z network.", 2, 100, unit="peers"),
     _e("thresholds.restart_warn", "int", 3, "Restarting a lot: restarts in an hour",
        "", 2, 100, unit="restarts"),
+    _e("thresholds.flood_warn", "int", 11, "Black marble: heads-up below",
+       "Heads-up when a surge of new outputs would leave a new transaction's 16-member ring working like "
+       "fewer members than this, if one sender made them all.", 2, 16, unit="of 16"),
+    _e("thresholds.flood_bad", "int", 8, "Black marble: problem below",
+       "Must be lower than the heads-up level.", 1, 15, unit="of 16"),
     _e("thresholds.tor_sending", "choice", "auto", "Tor sending",
        "Whether monerod sends your transactions over Tor (--tx-proxy tor,...). Auto: on when the running "
        "monerod has --tx-proxy tor,... (read from its flags); when it can't be found, once Tor connections "
@@ -102,6 +107,7 @@ SCHEMA = [
     _e("grace.syncing_min", "int", 20, "Still syncing for", "", 0, 240, unit="min"),
     _e("grace.spread_min", "int", 10, "Eclipse watch cluster for", "", 0, 120, unit="min"),
     _e("grace.tor_min", "int", 10, "No Tor connections for", "", 0, 120, unit="min"),
+    _e("grace.flood_min", "int", 30, "Black marble watch below its limit for", "", 0, 1440, unit="min"),
     # ---- display
     _e("display.layout", "choice", "tabs", "Screens",
        "Tabs show one screen at a time; one page stacks every screen.",
@@ -136,7 +142,7 @@ KEEP_ON_RESET = ("display.privacy",)
 _PANEL_LABELS = {
     "lamps": "Lamp wall", "chain": "Chain", "peers": "Peer scope", "route": "Route", "controls": "Controls",
     "traffic": "Traffic", "history": "History", "mempool": "Mempool", "events": "Log",
-    "computer": "Computer", "system": "System",
+    "computer": "Computer", "system": "System", "flood": "Black marble watch",
 }
 SCHEMA += [_e("panels." + p, "bool", True, _PANEL_LABELS[p], "Show this panel.") for p in PANEL_IDS]
 SCHEMA += [
@@ -317,6 +323,8 @@ def cross_field_errors(values: dict, changed: set | None = None) -> dict:
          "must be less than the heads-up level (%s GB)", "must be more than the problem level (%s GB)"),
         ("thresholds.reorg_warn", "thresholds.reorg_bad", ">",
          "must be more than the heads-up level (%s)", "must be less than the problem level (%s)"),
+        ("thresholds.flood_warn", "thresholds.flood_bad", "<",
+         "must be lower than the heads-up level (%s)", "must be higher than the problem level (%s)"),
     ]
     for warn_key, bad_key, op, bad_msg, warn_msg in rules:
         w, b = values.get(warn_key), values.get(bad_key)

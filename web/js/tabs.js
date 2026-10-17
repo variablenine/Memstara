@@ -10,7 +10,7 @@ export const SCREENS = ["status", "network", "chain", "mempool", "traffic", "com
 const ALERT_SCREEN = {
   node_down: "status", restarts: "status",
   peers: "network", spread_out: "network", spread_in: "network", tor: "network",
-  syncing: "chain", no_blocks: "chain", reorg: "chain", disk: "chain",
+  syncing: "chain", no_blocks: "chain", reorg: "chain", disk: "chain", flood: "chain",
   double_spend: "mempool",
   cpu_temp: "computer", memory: "computer", power: "computer",
 };

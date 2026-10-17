@@ -4,7 +4,9 @@ and events, and keeps the latest snapshot. The app window only ever reads that s
 Each poll: RPC (every source.refresh_s), local reads of this computer and monerod's log
 (every local.every_s, see host.py and logevents.py), finding the node's own settings
 (host.discover, at most once a minute or when its pid changes), then each enabled
-add-on's hooks (addons.py), the alert rules, the lamps and history.
+add-on's hooks (addons.py), the alert rules, the lamps and history. The black marble
+watch (flood.py) reads a year of output counts once, a part per poll, then only the
+newest blocks.
 
 Each new snapshot gets the next number (snapshot["seq"]). The window asks for the one
 after the number it has (snapshot_json_after), and that answer goes out the moment the
@@ -29,6 +31,7 @@ from pathlib import Path
 from . import VERSION, adapter, host as host_mod
 from .addons import Addons
 from .alerts import AlertEngine, cfg_from_settings, empty_obs, tor_sending_active
+from .flood import FloodWatch
 from .history import History
 from .host import HostReader, annotate_peers
 from .lamps import LampTracker, compute as compute_lamps
@@ -45,16 +48,17 @@ SLOW_CALLS = {  # method -> seconds between calls
     "get_limit": 600,
     "get_version": 600,
 }
-# every RPC call the poller makes (all read-only); the commands add their own. The last three
-# read each waiting transaction and which ones a new block took (pool.py)
+# every RPC call the poller makes (all read-only); the commands add their own. Then three that
+# read each waiting transaction and which ones a new block took (pool.py), and the outputs per
+# block for the black marble watch (flood.py)
 POLLER_CALLS = ("get_info", "get_last_block_header", "get_block_headers_range", "get_connections",
                 "get_transaction_pool_stats", "get_net_stats", "sync_info") + tuple(SLOW_CALLS) + (
-                "get_transaction_pool_hashes", "get_transactions", "get_block")
+                "get_transaction_pool_hashes", "get_transactions", "get_block", "get_output_distribution")
 # the ones monerod passes on to its bootstrap node while it uses one (use_bootstrap_daemon_if_necessary
 # in core_rpc_server.cpp): not sent then, since the answer would be that node's, not yours
 BOOTSTRAP_FORWARDED = {"get_last_block_header", "get_block_headers_range", "get_transaction_pool_stats",
                        "hard_fork_info", "get_fee_estimate", "get_limit", "get_version",
-                       "get_transaction_pool_hashes", "get_transactions", "get_block"}
+                       "get_transaction_pool_hashes", "get_transactions", "get_block", "get_output_distribution"}
 REORG_MAP_SIZE = 100
 ARRIVAL_MAX_NEW = 3         # more new (or replaced) blocks than this at once is catching up: no arrival times
 STEADY_MIN_S = 5            # arrival times only when the poll before answered within max(this, 3 polls)
@@ -272,6 +276,7 @@ class Poller:
         self.seen_time = None
         self.block_seen: dict = {}       # block hash -> when this node got it (only blocks seen arriving)
         self.pool = PoolList(self.log)   # each waiting transaction
+        self.flood = FloodWatch(self.log)   # outputs per block, for the black marble watch
         self.headers: list = []
         self.blocks_shown_prev = None
         self.reorgs: list = []
@@ -528,6 +533,9 @@ class Poller:
             elif self.synced_prev is False and synced:
                 self.add_event("sync", "Synced at height %s" % _n(node["height"]), "ok", now)
             self.synced_prev = synced
+
+        # ---- black marble watch: outputs per block, only what's new (it waits out syncing)
+        self.flood.update(self._call, top_height, node.get("top_hash"), synced, now, bootstrap=bootstrap is not None)
         parts["node"] = node
         return parts
 
@@ -797,6 +805,7 @@ class Poller:
             "reorg": {"deepest_24h": max([r["depth"] for r in recent], default=0) if self.last_ok else None,
                       "last": dict(self.reorgs[-1]) if self.reorgs else None},
             "sync": parts.get("sync"),
+            "flood": self.flood.part(),
         }
         source = {
             "mode": "live", "rpc": _hostport(url), "answering": answering,
@@ -829,6 +838,7 @@ class Poller:
             "reorgs": self.reorgs, "double_spends": parts["mempool"].get("double_spends") if answering else None,
             "restarts": self.restarts if not restricted else [],
             "out16": spread["out16"] if spread else None, "in24": spread["in24"] if spread else None,
+            "flood": chain["flood"] if answering else None,
             "computer": host.get("computer") if host and host.get("ok") is not False else None,
             "addon_alerts": self.addons.alerts(vals, ctx),
         })
@@ -902,7 +912,8 @@ class Poller:
                        "host_name": self.host_name, "dashboard_version": VERSION, "bootstrap": None},
             "node": node,
             "chain": {"blocks": [], "avg_interval_s": None, "median_weight": None, "wait_odds": None,
-                      "reorg": {"deepest_24h": None, "last": None}, "sync": None},
+                      "reorg": {"deepest_24h": None, "last": None}, "sync": None,
+                      "flood": {"state": "off", "why": "starting"}},
             "peers": adapter.empty_peers(),
             "mempool": adapter.empty_pool(),
             "traffic": {"bytes_in": None, "bytes_out": None, "rate_in": None, "rate_out": None},

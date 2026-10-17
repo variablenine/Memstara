@@ -253,6 +253,37 @@
           </div>
         </div>
       </section>
+      <section class="panel span-full" data-panel="flood" id="p-flood" aria-labelledby="h-flood">
+        <header class="ph">
+          <span class="pid">L</span>
+          <h2 id="h-flood">BLACK MARBLE WATCH</h2>
+          <span class="psub" id="flood-sub" title="monerod RPC: get_output_distribution">—</span>
+        </header>
+        <div class="pb">
+          <div class="flood-top">
+            <div class="figure" id="flood-fig">
+              <div class="fig-label">A NEW 16-MEMBER RING WORKS LIKE</div>
+              <div class="fig-value" id="flood-rings">—</div>
+              <div class="fig-note" id="flood-note">—</div>
+              <div class="ringdots" id="flood-dots" role="img" aria-label="Ring members">
+                <span class="rd rd-real"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span>
+              </div>
+              <div class="meter" id="flood-meter" aria-hidden="true" hidden><span></span></div>
+            </div>
+            <dl class="kv" id="flood-kv"></dl>
+            <figure class="flood-days">
+              <figcaption><span class="hc-title">NEW OUTPUTS PER 24 H · LAST 30 DAYS</span>
+                <span class="legend-inline"><span class="lg-line s1"></span>UP TO A USUAL DAY <span class="lg-line s2"></span>ABOVE IT</span></figcaption>
+              <svg class="fchart" id="flood-chart" role="group" aria-label="New outputs in each of the last 30 days. Tab to the newest, then the arrow keys step through them."></svg>
+            </figure>
+          </div>
+          <p class="pcap">A black marble flood is one sender making a great many outputs so that other people's wallets pick theirs as decoys, and every decoy they own is one they can rule out. This counts the outputs in each block and works out how many of the decoys a wallet would pick right now come from outputs above a usual day, weighted the way wallets pick (mostly from the last few days). Nobody can see who made those outputs, so a busy spell of ordinary use reads the same.</p>
+          <details class="tableview">
+            <summary>TABLE VIEW</summary>
+            <div class="tablewrap"><table id="flood-table"><thead><tr><th>24 H ENDING</th><th>NEW OUTPUTS</th><th>AGAINST A USUAL DAY</th></tr></thead><tbody></tbody></table></div>
+          </details>
+        </div>
+      </section>
       </div>
     </section>
     <section class="screen" id="screen-mempool" role="tabpanel" aria-labelledby="tab-mempool" data-screen="mempool" tabindex="-1">

@@ -75,7 +75,8 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(C.registry_calls() | set(POLLER_CALLS), set(READ_ALLOWED) | set(WRITE_ALLOWED),
                          "the allowlist is exactly the commands' calls plus the poller's")
         self.assertEqual(set(POLLER_CALLS) - C.registry_calls(),
-                         {"get_last_block_header", "get_version", "get_transaction_pool_hashes"})
+                         {"get_last_block_header", "get_version", "get_transaction_pool_hashes",
+                          "get_output_distribution"})
         self.assertFalse(set(POLLER_CALLS) & set(WRITE_ALLOWED), "the poller only reads")
         for cmd in C.REGISTRY.values():
             self.assertTrue(cmd.calls, cmd.name)

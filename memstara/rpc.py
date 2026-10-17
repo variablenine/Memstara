@@ -33,8 +33,8 @@ from . import VERSION
 
 # method -> endpoint ("/json_rpc" for JSON-RPC, otherwise the plain path)
 READ_ALLOWED = {
-    # the poller (get_last_block_header, get_version and get_transaction_pool_hashes are used by
-    # no console command)
+    # the poller (get_last_block_header, get_version, get_transaction_pool_hashes and
+    # get_output_distribution are used by no console command)
     "get_info": "/json_rpc",
     "get_connections": "/json_rpc",
     "get_transaction_pool_stats": "/get_transaction_pool_stats",
@@ -48,6 +48,7 @@ READ_ALLOWED = {
     "get_fee_estimate": "/json_rpc",
     "get_limit": "/get_limit",
     "get_version": "/json_rpc",
+    "get_output_distribution": "/json_rpc",    # the black marble watch (flood.py): RingCT outputs per block
     # read-only console commands
     "get_height": "/get_height",
     "mining_status": "/mining_status",

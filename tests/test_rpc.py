@@ -31,7 +31,7 @@ MONEROD_PATHS = {
 
 # methods monerod has but no console command (and not the poller) sends: never allowed
 NEVER = ["submit_block", "submitblock", "generateblocks", "calc_pow", "add_aux_pow", "get_block_template",
-         "send_raw_transaction", "sendrawtransaction", "get_outs", "get_output_distribution", "rpc_access_pay",
+         "send_raw_transaction", "sendrawtransaction", "get_outs", "rpc_access_pay",
          "rpc_access_submit_nonce", "rpc_access_tracking", "rpc_access_account", "get_public_nodes",
          "get_alt_blocks_hashes", "get_txpool_backlog", "get_miner_data", "getinfo", "getheight",
          "start_save_graph", "", None, 42]
@@ -133,7 +133,8 @@ class AllowlistTest(unittest.TestCase):
         top = self.fake.top
         params = {"get_block_headers_range": {"start_height": top - 2, "end_height": top},
                   "get_block": {"height": top}, "get_block_header_by_hash": {"hashes": []},
-                  "get_coinbase_tx_sum": {"height": top, "count": 1}, "banned": {"address": "1.2.3.4"}}
+                  "get_coinbase_tx_sum": {"height": top, "count": 1}, "banned": {"address": "1.2.3.4"},
+                  "get_output_distribution": {"amounts": [0], "from_height": top - 9, "to_height": top}}
         for m in READ_ALLOWED:
             res = client.call(m, params.get(m))
             self.assertEqual(res.get("status"), "OK", m)

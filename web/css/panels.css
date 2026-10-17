@@ -80,8 +80,9 @@
 .lamp[data-state="bad"] .lamp-dot { color: var(--bad-ink-3); }
 .lamp[data-flash="on"] { animation: lampflash 1s steps(1, end) infinite; }
 @keyframes lampflash { 50% { background: var(--bg-3); box-shadow: none; } }
+/* on the top row, between the number and the ▲ / ■, clear of the reading below */
 .lamp[data-first="on"]::after {
-  content: "FIRST"; position: absolute; bottom: 5px; right: 6px; font-family: var(--font-label); font-size: 9px;
+  content: "FIRST"; position: absolute; top: 5px; right: 20px; font-family: var(--font-label); font-size: 9px;
   letter-spacing: .12em; color: var(--ink); background: rgba(0,0,0,.45); padding: 0 3px;
 }
 .lamps.testing .lamp { background: rgba(var(--accent-rgb), .2); border-color: rgba(var(--accent-rgb), .7); }
@@ -135,6 +136,29 @@
 .tablewrap th { position: sticky; top: 0; background: var(--bg-3); color: var(--ink-3); font-size: var(--fs-0); text-align: right; padding: 5px 8px; font-weight: 500; }
 .tablewrap td { padding: 4px 8px; text-align: right; border-top: 1px solid var(--line); white-space: nowrap; }
 .tablewrap th:first-child, .tablewrap td:first-child, .tablewrap td.l, .tablewrap th.l { text-align: left; }
+
+/* ---- L · black marble watch ---- */
+.flood-top { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(240px, 1.1fr) minmax(280px, 1.4fr); gap: 20px 28px; align-items: center; }
+@media (max-width: 1099px) { .flood-top { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .flood-days { grid-column: 1 / -1; } }
+@media (max-width: 620px) { .flood-top { grid-template-columns: minmax(0, 1fr); } }
+.ringdots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; max-width: 260px; }
+.rd { width: 11px; height: 11px; border-radius: 50%; background: var(--ink-3); border: 1.5px solid var(--ink-3); transition: background .4s, border-color .4s; }
+.rd.rd-real { background: var(--accent); border-color: var(--accent); }
+.rd.rd-surge { background: transparent; border-color: var(--s2); border-style: dashed; }
+.ringdots.rd-none .rd { background: transparent; border-color: var(--ink-4); }
+.figure[data-level="warn"] .rd.rd-surge { border-color: var(--warn); }
+.figure[data-level="bad"] .rd.rd-surge { border-color: var(--bad); }
+.flood-days figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 6px; }
+.fchart { width: 100%; height: 120px; display: block; overflow: visible; }
+.fchart .f-axis { stroke: var(--line-2); stroke-width: 1; }
+.fchart .f-usual { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.fchart .f-bar { fill: var(--s1); }
+.fchart .f-over { fill: var(--s2); }
+.fchart .f-hit { fill: transparent; cursor: crosshair; }
+.fchart .f-bar, .fchart .f-over, .fchart text { pointer-events: none; }
+.fchart .f-hit:hover, .fchart .f-hit:focus { fill: rgba(var(--accent-rgb), .08); }
+.fchart .f-hit:focus-visible { outline: none; stroke: var(--accent); stroke-width: 1; }
+.fchart text { fill: var(--ink-3); font-family: var(--font-mono); font-size: 10px; }
 
 /* ---- C · peers ---- */
 .peer-counts { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px; }

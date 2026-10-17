@@ -6,7 +6,9 @@ answers in tests/fixtures/ (captured in monerod v0.18.5.x shapes) plus a little
 state (limits, peer limits, mining, log level, pool, bans, chain), with a few knobs
 tests can turn: change get_info fields, add a block, replace the last N blocks (a
 reorg), refuse connections (node stopped), act like a restricted RPC port, or
-require a Digest login. The pool's transactions are real ones (tests/fixtures/
+require a Digest login. The outputs each block made (get_output_distribution) come
+from a formula, so a year of them costs nothing; `floods` adds extra outputs to a
+range of blocks. The pool's transactions are real ones (tests/fixtures/
 pool_txs.json, made on a regtest node) under made-up hashes; with live_pool on, the
 pool totals are worked out from them the way monerod does, and mine() puts some in a
 new block. Every request is recorded in `requests` as (name, params),
@@ -40,7 +42,8 @@ PLAIN_UNRESTRICTED_ONLY = {"/get_net_stats", "/mining_status", "/save_bc", "/get
 JSON_RPC = {"get_info", "get_connections", "get_bans", "sync_info", "hard_fork_info", "get_fee_estimate",
             "get_version", "get_last_block_header", "get_block_headers_range", "set_bans", "get_block",
             "get_block_header_by_hash", "get_alternate_chains", "get_coinbase_tx_sum", "get_output_histogram",
-            "banned", "rpc_access_data", "prune_blockchain", "relay_tx", "flush_txpool", "flush_cache"}
+            "get_output_distribution", "banned", "rpc_access_data", "prune_blockchain", "relay_tx", "flush_txpool",
+            "flush_cache"}
 POOL_TX = "c0ffee" + "0" * 58           # in the pool
 CHAIN_TX = "ab" * 32                    # in block 3,780,000
 POOL_FIXTURE = "pool_txs.json"          # six real transactions: their split hex, fee and weight
@@ -160,6 +163,8 @@ class FakeMonerod:
         for h in range(top - chain_len + 1, top + 1):
             self.chain[h] = self._header(h, tpl["timestamp"] - (top - h) * 120)
         self.chain[top]["hash"] = tpl["hash"]
+        self.floods: list = []                   # (first block, last block, extra outputs in each)
+        self.distribution_error = None           # an error message get_output_distribution answers with
         self._httpd = None
         self.port = 0
         self.add_pool_tx(POOL_TX, 0, keep=True)
@@ -237,6 +242,49 @@ class FakeMonerod:
                 self.salt[h] = self.salt.get(h, 0) + 1
                 self.chain[h] = self._header(h, self.chain[h]["timestamp"])
             self.add_block()
+
+    # ---- outputs per block (RingCT, amount 0)
+    def outputs_in(self, h):
+        n = 40 + (7 * h) % 11
+        for lo, hi, extra in self.floods:
+            if lo <= h <= hi:
+                n += extra
+        return n
+
+    def outputs_before(self, h):
+        """Outputs in blocks 0 to h - 1 (7 * h % 11 goes through 0 to 10 once every 11 blocks)."""
+        full = h // 11
+        n = 40 * h + 55 * full + sum((7 * k) % 11 for k in range(full * 11, h))
+        for lo, hi, extra in self.floods:
+            a, b = max(lo, 0), min(hi, h - 1)
+            if b >= a:
+                n += extra * (b - a + 1)
+        return n
+
+    def _distribution(self, params, top):
+        """Like core_rpc_server::on_get_output_distribution with Blockchain::get_output_distribution."""
+        amounts = params.get("amounts") or []
+        if self.restricted and amounts != [0]:
+            return {"error": {"code": -19, "message": "Restricted RPC can only get output distribution for rct "
+                                                      "outputs. Use your own node."}}
+        if self.distribution_error:
+            return {"error": {"code": -5, "message": self.distribution_error}}
+        frm = int(params.get("from_height") or 0)
+        to = int(params.get("to_height") or 0) or top
+        dists = []
+        for amount in amounts:
+            if amount != 0 or to < frm or frm > top or to > top:
+                return {"error": {"code": -5, "message": "Failed to get output distribution"}}
+            counts = [self.outputs_in(h) for h in range(frm, to + 1)]
+            base = self.outputs_before(frm)
+            if params.get("cumulative"):
+                run = base
+                for i, c in enumerate(counts):
+                    run += c
+                    counts[i] = run
+            dists.append({"amount": 0, "base": base, "binary": False, "compress": False, "distribution": counts,
+                          "start_height": frm})
+        return self._ok(distributions=dists, credits=0, top_hash="")
 
     # ---- connection knobs
     def start(self):
@@ -321,6 +369,8 @@ class FakeMonerod:
             em, fee = 600_000_000_000 * n, 1_000_000 * n
             return self._ok(emission_amount=em, wide_emission_amount=hex(em), emission_amount_top64=0,
                             fee_amount=fee, wide_fee_amount=hex(fee), fee_amount_top64=0, credits=0, top_hash="")
+        if method == "get_output_distribution":
+            return self._distribution(params, top)
         if method == "get_output_histogram":
             return self._ok(histogram=[{"amount": 0, "total_instances": 99_000_000, "unlocked_instances": 98_000_000,
                                         "recent_instances": 0}], credits=0, top_hash="")

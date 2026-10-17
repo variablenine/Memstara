@@ -16,6 +16,7 @@ import { initMempool, renderMempool } from "./panels/mempool.js";
 import { initTraffic, renderTraffic, seedTraffic, recordTraffic } from "./panels/traffic.js";
 import { initHistory, refreshHistory, recordHistory } from "./panels/history.js";
 import { renderSystem, setSystemSettings } from "./panels/system.js";
+import { initFlood, renderFlood, setFloodSettings } from "./panels/flood.js";
 import { renderEvents } from "./panels/events.js";
 import { initComputer, renderComputer, seedComputer, recordComputer } from "./panels/computer.js";
 import { loadAddons, renderAddonPanels } from "./addons.js";
@@ -110,6 +111,7 @@ function applySettings(v) {
   setChainSettings(v);
   setPeerSettings(v);
   setSystemSettings(v);
+  setFloodSettings(v);
   setControlSettings(v);
   setCommandSettings(v);
   setLayout(v["display.layout"]);
@@ -137,6 +139,7 @@ function draw(snap) {
   panel("mempool", () => renderMempool(snap));
   panel("traffic", () => renderTraffic(snap));
   panel("system", () => renderSystem(snap));
+  panel("flood", () => renderFlood(snap));
   panel("events", () => renderEvents(snap));
   panel("computer", () => renderComputer(snap));
   panel("controls", () => renderControls(snap));
@@ -331,6 +334,7 @@ async function start() {
   initTraffic();
   initHistory();
   initComputer();
+  initFlood();
   initConfirm();
   initCommands({ changed: () => refresh() });
   initControls({ changed: () => refresh(), openCommands: () => openCommands() });

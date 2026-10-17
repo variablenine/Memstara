@@ -32,7 +32,7 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 |---|---|---|
 | STATUS | A ring with one segment per thing being watched, lit when something needs a look, with the height, time since the last block and quick readouts in the middle. Click a segment to open the screen that explains it. | A · Lamp wall, and add-on panels |
 | NETWORK | A 3D tree of every connection you can turn and zoom: outgoing, incoming and Tor, with peers on one company's servers grouped. The moving dots are the data each peer really sent and received. A live chatter log beside it. | C · Peer scope, D · Route |
-| CHAIN | The last blocks as boxes receding into the distance, sized by weight and spaced by the wait before each, with the next block's timer. | B · Chain, K · System |
+| CHAIN | The last blocks as boxes receding into the distance, sized by weight and spaced by the wait before each, with the next block's timer. | B · Chain, K · System, L · Black marble watch |
 | MEMPOOL | One dot per waiting transaction, in bands by how long it has waited. | H · Mempool |
 | TRAFFIC | A scope of download and upload over the last 15 minutes. | F · Traffic, G · History |
 | COMPUTER | Dials for CPU temperature (°C or °F), monerod's CPU, memory, how busy the chain's drive is, and disk free. | J · Computer |
@@ -52,6 +52,7 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 | I · Log | Things that changed, newest first, including what `monerod`'s own log reports (reorgs, bans, errors). |
 | J · Computer | The `monerod` process (CPU, memory, disk, the flags it runs with, "restart to use the new version"), CPU temperature, power and battery, memory, the drive holding the chain, the network link and the Tor proxy. |
 | K · System | Monero version, uptime, network rules version, bans, fees, disk space. |
+| L · Black marble watch | What a new transaction's 16-member ring works like if one sender made the recent surge of new outputs, drawn as 16 dots, and the last 30 days of new outputs against a usual day. |
 
 The pictures only move while their screen is open and in view, and Settings →
 LOOK → Motion (or your desktop's reduce-animation setting) stills
@@ -62,6 +63,24 @@ folders and transaction ids behind a glitch, and shows every clock in UTC, so th
 screens can be shown to other people or put in a screenshot. The hiding happens in the
 app's server, so the real values never reach the window. Changes to the node are off
 while it's on, and turning it off asks you to type SHOW.
+
+**Black marble watch.** A black marble flood is one sender making a great many
+outputs so that other people's wallets pick theirs as decoys: every decoy they
+own is one they can rule out, so a 16-member ring hides the real coin among
+fewer members. Nobody can see who owns an output, so the BLACK MARBLE lamp
+estimates the worst case: it compares the outputs in each block of the last
+year with a usual day (the middle of the last 180 days), works out how often a
+wallet would pick its decoys from the extra ones (the same way Monero's own
+wallet picks them), and says what a new ring works like if one sender made
+them all. It lights as a heads-up when that stays under 11 of 16 for 30
+minutes, and as a problem under 8 (Settings → Alert limits, and Wait before
+alerting). Tested on the chain's real history, it lit through most of the
+suspected flood of March to June 2024 (about 5 of 16 at its worst) and stayed
+quiet through 2025 and 2026. It can't tell a flood from a busy spell of
+ordinary use, so a lit lamp means "wait if privacy matters", not "you are
+being watched". It reads about 263,000 blocks once when it starts (showing how
+far along it is), then only the newest. Details:
+[docs/DESIGN.md](docs/DESIGN.md), "Black marble watch".
 
 Every chart has a table view or a hover readout with the exact numbers.
 Add-ons can add panels, lamps and boxes in the route diagram (see
@@ -263,7 +282,7 @@ How to write one: [addons/README.md](addons/README.md), and
   carrying a key that is new at every start and that only the window gets. A
   browser, or any other program or user on the computer, is turned away.
 - It only sends the RPC requests `monerod`'s own console commands send, plus
-  two read-only ones for the panels. Anything else is refused before a
+  four read-only ones for the panels. Anything else is refused before a
   request is made.
 - Every change also needs a header only its own screens send, and requests
   from web pages are refused.
