@@ -42,7 +42,7 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 |---|---|---|
 | STATUS | A ring with one segment per thing being watched, lit when something needs a look, with the height, time since the last block and quick readouts in the middle. Click a segment to open the screen that explains it. | A · Lamp wall |
 | NETWORK | A 3D tree of every connection you can turn and zoom: outgoing, incoming and Tor, with peers on one company's servers grouped. The moving dots are the data each peer really sent and received. A live chatter log beside it. | C · Peer scope, D · Route |
-| CHAIN | The last blocks as boxes receding into the distance, sized by weight and spaced by the wait before each, with the next block's timer. | B · Chain, K · System, L · Black marble watch |
+| CHAIN | The last blocks as boxes receding into the distance, sized by weight and spaced by the wait before each. The next block is the biggest block allowed, filling with your node's waiting transactions the way monerod would pick them, with its timer. | B · Chain, K · System, L · Black marble watch |
 | MEMPOOL | One dot per waiting transaction, in bands by how long it has waited. | H · Mempool |
 | TRAFFIC | A scope of download and upload over the last 15 minutes. | F · Traffic, G · History |
 | BANS | A clock of the short bans, each ring draining as its time runs out. | E · Ban list |
