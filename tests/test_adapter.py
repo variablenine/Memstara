@@ -43,7 +43,7 @@ class InfoTest(unittest.TestCase):
         self.assertIsNone(n["version"])
         self.assertIsNone(n["started"])
         self.assertIsNone(n["uptime_s"])
-        for k in ("out_peers", "in_peers", "rpc_connections", "white_peers", "grey_peers", "alt_blocks"):
+        for k in ("out_peers", "in_peers", "rpc_connections", "white_peers", "grey_peers", "alt_blocks", "db_bytes"):
             self.assertIsNone(n[k], k)
         self.assertEqual(n["height"], info["height"])        # still known
 

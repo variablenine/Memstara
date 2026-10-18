@@ -184,10 +184,15 @@ Facts checked in Monero's source (`src/rpc/core_rpc_server.h`,
   `get_coinbase_tx_sum`, `get_alternate_chains` and `rpc_access_data` only
   exist on an **unrestricted** RPC port (`core_rpc_server.h`: `!m_restricted`
   in their map lines). On a
-  restricted port `get_info` also zeroes the peer counts, `start_time`,
-  `version`, and reports `free_space` as 2^64-1. The adapter detects
+  restricted port `get_info` also zeroes the peer and RPC connection counts,
+  `alt_blocks_count`, `start_time`, `update_available` and `version`, reports
+  `free_space` as 2^64-1, rounds `database_size` up to a multiple of 5 GiB,
+  and counts only relayed transactions in `tx_pool_size` (`on_get_info`); the
+  adapter makes all of these null except `tx_pool`. The adapter detects
   `get_info.restricted == true` and reports it (see `source.restricted`), and
-  the screens tell the user to point the dashboard at the admin port.
+  the screens say, in grey since nothing is wrong, what that port hides and
+  that the unrestricted port shows it. A restricted port is the safer choice:
+  `monerod` refuses its admin commands there.
 - `connection_info.address_type`: 0 invalid, 1 IPv4, 2 IPv6, **3 I2P, 4 Tor**.
   Tor peers also have a `host` ending in `.onion`.
 - `connection_info.state` strings: `before_handshake`, `synchronizing`,
@@ -281,7 +286,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
     "tx_pool": 34,
     "alt_blocks": 2,
     "free_bytes": 400000000000,        // null on a restricted port
-    "db_bytes": 263000000000,
+    "db_bytes": 263000000000,          // null on a restricted port (monerod rounds it up to 5 GiB there)
     "update_available": false,
     "hf_version": 16,
     "rpc_version": "3.15",             // get_version.version as major.minor
@@ -862,8 +867,8 @@ come back when it starts.
 `{"ok", "path", "size", "mtime", "lines": [...], "source"}`. Never writes,
 never follows symlinks out of the user's home, refuses anything but a regular
 file (`403`), and never blocks on a pipe. It also refuses (`403`) a file
-inside the dashboard's own settings or state folder
-(`~/.config/memstara`, `~/.local/state/memstara`, or
+inside one of the dashboard's own folders
+(`~/.config/memstara`, `~/.local/state/memstara`, `~/.cache/memstara`, or
 their `$XDG_*` places) and one whose name (after following links) has no
 `.log` ("X isn't a log file (its name has no .log), so it isn't read.").
 monerod's log as events (`logevents.py`) follows the same rules. Any
@@ -898,7 +903,8 @@ while `node.log_path` is still its default, monerod's log isn't read: no log
 events, and `/api/node-log` answers `404` with why. A path set by hand (a copy,
 or a mounted folder) is read as usual. `source` events say once per node that
 the RPC address isn't on this computer, that plain `http` across a network can
-be read by others (an SSH tunnel keeps it private, see the README), and, when
+be read and changed by others (on the unrestricted port, a read can be turned
+into a command; an SSH tunnel keeps it private, see the README), and, when
 the node answers with no login, that anyone who reaches its unrestricted port
 can change it (start monerod with `--rpc-login`). An SSH tunnel's near end is
 on this computer (`127.0.0.1`), so a node read through one counts as here.

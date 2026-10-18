@@ -26,8 +26,8 @@ full one to bitmonero.log-<date>) is read from its start, a shorter file (trunca
 too, and a partial last line waits for the next poll. At most 1 MB is read per poll;
 when more than that is waiting, the older part is skipped. Changing log.path starts
 over at the end of the new file. Like GET /api/node-log, a path that is a link to
-somewhere outside the user's home folder, isn't a regular file, is inside the dashboard's
-own settings or state folder, or whose name has no ".log" is refused.
+somewhere outside the user's home folder, isn't a regular file, is inside one of the
+dashboard's own folders (settings, state, cache), or whose name has no ".log" is refused.
 """
 
 from __future__ import annotations
@@ -91,13 +91,13 @@ def _open_log(path: str, home: str | None):
         raise LogError("The log path is a link to somewhere outside your home folder, so it isn't read")
     why = log_path_refusal(real)
     if why == "own":
-        raise LogError("The log path is in the dashboard's own settings or state folder, so it isn't read")
+        raise LogError("The log path is in one of the dashboard's own folders, so it isn't read")
     if why == "name":
         raise LogError("The log path isn't a log file (its name has no .log), so it isn't read")
     flags = (os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
              | getattr(os, "O_CLOEXEC", 0))
     try:
-        fd = os.open(real, flags)   # never blocks on a pipe; never follows a link swapped in
+        fd = os.open(real, flags)   # never blocks on a pipe; O_NOFOLLOW: the file itself can't be a link
     except FileNotFoundError:
         raise LogError("monerod's log isn't at %s" % p)
     except PermissionError:

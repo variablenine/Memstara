@@ -73,7 +73,7 @@ def parse_info(info: dict, now: float, out_wanted: int) -> dict:
         "tx_pool": as_int(info.get("tx_pool_size")),
         "alt_blocks": None if restricted else as_int(info.get("alt_blocks_count")),
         "free_bytes": free,
-        "db_bytes": as_int(info.get("database_size")),
+        "db_bytes": None if restricted else as_int(info.get("database_size")),   # rounded up to 5 GiB there
         "update_available": None if restricted else as_bool(info.get("update_available")),
         "_restricted": restricted,
         "_median_weight": as_int(info.get("block_weight_median")) or as_int(info.get("block_size_median")),

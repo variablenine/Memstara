@@ -420,7 +420,9 @@ class ServerPrivacyTest(unittest.TestCase):
         answers = self.answers()
         for path, text in answers.items():
             for s in self.seeds:
-                self.assertNotIn(s, text, "%s in %s" % (s, path))
+                # a port only as a whole number: the traffic counters grow and can contain its digits
+                found = re.search(r"(?<!\d)%s(?!\d)" % s, text) if s.isdigit() else s in text
+                self.assertFalse(found, "%s in %s" % (s, path))
         snap = json.loads(answers["/api/snapshot"])
         self.assertIs(snap["privacy"], True)
         self.assertTrue(any(TOKEN_RE.fullmatch(p["host"]) for p in snap["peers"]["list"]))

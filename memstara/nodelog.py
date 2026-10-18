@@ -1,7 +1,7 @@
 """GET /api/node-log: the last lines of monerod's log. Read-only.
 
 It reads node.log_path: at most the last 512 KB of a regular file, never written, never a symlink out of the user's home folder, and never
-blocking on a pipe or device. A file inside the dashboard's own settings or state folder, or
+blocking on a pipe or device. A file inside one of the dashboard's own folders (settings, state, cache), or
 one whose name has no ".log", isn't read either (util.log_path_refusal). While the RPC
 address isn't on this computer, the log at the default place may be another node's, so it
 is read only from a path set by hand.
@@ -60,7 +60,7 @@ def tail(configured: str, lines: int = DEFAULT_LINES, name: str = "the log") -> 
     real = resolve(configured)
     why = log_path_refusal(real)
     if why == "own":
-        raise LogError(403, "%s is in the dashboard's own settings or state folder, so it isn't read." % path)
+        raise LogError(403, "%s is in one of the dashboard's own folders, so it isn't read." % path)
     if why == "name":
         raise LogError(403, "%s isn't a log file (its name has no .log), so it isn't read." % path)
     try:

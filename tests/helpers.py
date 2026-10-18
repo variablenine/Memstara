@@ -16,10 +16,11 @@ for p in (str(ROOT), str(TESTS)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# never touch the real ~/.config or ~/.local/state from a test
+# never touch the real ~/.config, ~/.local/state or ~/.cache from a test
 _SANDBOX = tempfile.mkdtemp(prefix="memstara-tests-")
 os.environ["XDG_CONFIG_HOME"] = os.path.join(_SANDBOX, "config")
 os.environ["XDG_STATE_HOME"] = os.path.join(_SANDBOX, "state")
+os.environ["XDG_CACHE_HOME"] = os.path.join(_SANDBOX, "cache")
 
 T0 = 1791230700.0   # 2026-10-05: the made-up "now" the fixtures' times are set around
 

@@ -4,7 +4,8 @@ Memstara only reads, but it may hold the login to your node's unrestricted
 RPC port, which can change the node. A bug that lets it send anything other
 than the reads on its list (`memstara/rpc.py`), that lets anything other than
 its own window use it, or that sends anything to the node the screens didn't
-ask for, is a security problem.
+ask for, is a security problem. So is anything that breaks a point in
+[SAFETY.md](SAFETY.md).
 
 Please report security problems privately: on GitHub, open the repository's
 **Security** tab and choose **Report a vulnerability**. Don't open a public
@@ -26,5 +27,6 @@ What's in scope:
 - privacy mode letting a real address, port, name or transaction id through to
   the window;
 - anything that writes outside `~/.config/memstara`, `~/.local/state/memstara`,
-  `~/.cache/memstara` and the app's own entries in
-  `~/.local/share/applications` and `~/.config/autostart`.
+  `~/.cache/memstara` (or their `$XDG_*` places), the settings file you name
+  with `--config`, and the app's own entries in `~/.local/share/applications`
+  and `~/.config/autostart`.

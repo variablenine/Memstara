@@ -42,8 +42,8 @@ _e = entry
 SCHEMA = [
     # ---- where the data comes from
     _e("source.rpc_url", "url", "http://127.0.0.1:18081", "Node RPC address",
-       "monerod's RPC address. Use the unrestricted (admin) port, for example "
-       "http://127.0.0.1:18081 (monerod's default); a restricted port hides peers, bans, traffic and disk space. "
+       "monerod's RPC address, for example http://127.0.0.1:18081 (monerod's default). Its unrestricted port "
+       "shows everything; a restricted port works too, but monerod hides peers, bans, traffic and disk space there. "
        "For a node on another computer, an SSH tunnel to it keeps its answers private (see the README)."),
     _e("source.rpc_user", "text", "", "RPC user",
        "Only if monerod runs with --rpc-login."),
@@ -174,6 +174,27 @@ def migrate(raw: dict) -> dict | None:
             if isinstance(inner, dict) and type(inner.get(name)) is int and inner[name] == value:
                 inner[name] = DEFAULTS[key]
     return out
+
+
+def not_settings_file(path) -> bool:
+    """Whether `path` doesn't look like the dashboard's settings: a JSON object with a whole
+    "format" number of 1 or more, a "source" section and only sections beside them, the shape
+    of every file it saves. A file named with --config must look like that or not exist yet,
+    so another program's file isn't taken for one. It's a check of the file's shape: it can't
+    tell where a file came from."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError):
+        return True
+    if not isinstance(raw, dict):
+        return True
+    fmt = raw.get("format")
+    return (not isinstance(fmt, int) or isinstance(fmt, bool) or fmt < 1
+            or not isinstance(raw.get("source"), dict)
+            or any(k != "format" and not isinstance(v, dict) for k, v in raw.items()))
 
 
 def node_log_path(values: dict) -> str:

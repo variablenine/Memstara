@@ -11,7 +11,8 @@ import unittest.mock
 from pathlib import Path
 
 import helpers  # noqa: F401
-from memstara.settings import (DEFAULTS, FORMAT, PANEL_IDS, SCHEMA, Settings, SettingsError, migrate)
+from memstara.settings import (DEFAULTS, FORMAT, PANEL_IDS, SCHEMA, Settings, SettingsError, migrate,
+                               not_settings_file)
 
 
 class SettingsTest(unittest.TestCase):
@@ -39,8 +40,15 @@ class SettingsTest(unittest.TestCase):
 
     def test_an_existing_folder_made_private_on_save(self):
         os.chmod(self.dir, 0o755)    # made earlier with mkdir -p, say
-        self.s.update({"source.rpc_password": "pw"})
+        with unittest.mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.dir.parent)}):
+            self.s.update({"source.rpc_password": "pw"})
         self.assertEqual(stat.S_IMODE(os.stat(self.dir).st_mode), 0o700)
+        # a folder that isn't the dashboard's own (a settings file named with --config) stays as it is
+        other = Path(self.tmp.name) / "other"
+        other.mkdir(mode=0o755)
+        Settings(other / "settings.json", log=lambda m: None).load().update({"source.rpc_password": "pw"})
+        self.assertEqual(stat.S_IMODE(os.stat(other).st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(os.stat(other / "settings.json").st_mode), 0o600)
         home = Path(self.tmp.name) / "home"
         home.mkdir(mode=0o751)
         with unittest.mock.patch.dict(os.environ, {"HOME": str(home)}):
@@ -230,6 +238,19 @@ class SettingsTest(unittest.TestCase):
         s = Settings(self.path, save=False, log=lambda m: None).load()
         self.assertEqual(s.get("source.refresh_s"), 1)
         self.assertEqual(self.path.read_text(), before)
+
+    def test_only_a_settings_file_is_taken_for_one(self):
+        """--config refuses a file that isn't the dashboard's own, so nothing else is replaced."""
+        self.assertFalse(not_settings_file(self.path))
+        self.assertFalse(not_settings_file(self.dir / "new.json"), "not there yet: it will be made")
+        for text in ("{not json", "[]", '{"source": {}}', '{"format": "2"}', '{"format": true}', "log-level=1\n",
+                     '{"format": 3, "theme": "dark", "accounts": [1, 2]}', '{"format": 0, "source": {}}',
+                     '{"format": 2, "source": {}, "name": "x"}', '{"format": 2, "source": []}'):
+            (self.dir / "other").write_text(text)
+            self.assertTrue(not_settings_file(self.dir / "other"), text)
+        (self.dir / "other").write_text('{"format": 2, "source": {"refresh_s": 5}, "display": {}}')
+        self.assertFalse(not_settings_file(self.dir / "other"), "the shape of the files it saves")
+        self.assertTrue(not_settings_file(self.dir), "a folder")
 
     def test_load_garbage_file(self):
         self.path.write_text("{not json")

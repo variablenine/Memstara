@@ -16,7 +16,7 @@ from helpers import WRITE, get_json, request
 from memstara import nodelog
 from memstara.app import App
 from memstara.settings import Settings
-from memstara.util import config_dir, state_dir
+from memstara.util import cache_dir, config_dir, state_dir
 
 
 class StubSettings:
@@ -191,12 +191,13 @@ class TailTest(unittest.TestCase):
                                               % notes))
         (self.home / "notes.log").symlink_to(notes)
         self.assertEqual(self.read(path="~/notes.log")[0], 403, "the name of the file a link leads to counts")
-        # the dashboard's own folders (settings with the RPC password, saved history): never, whatever the name
-        for folder in (config_dir(), state_dir()):
+        # the dashboard's own folders (settings with the RPC password, saved history, the window's
+        # cache): never, whatever the name
+        for folder in (config_dir(), state_dir(), cache_dir()):
             folder.mkdir(parents=True, exist_ok=True)
             (folder / "old.log").write_text("secret\n")
             st, out = self.read(path=str(folder / "old.log"))
-            self.assertEqual((st, out["error"]), (403, "%s is in the dashboard's own settings or state folder, so "
+            self.assertEqual((st, out["error"]), (403, "%s is in one of the dashboard's own folders, so "
                                                        "it isn't read." % (folder / "old.log")))
 
     def test_bad_requests(self):

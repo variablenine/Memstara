@@ -24,17 +24,30 @@ def state_dir() -> Path:
     return Path(base) / APP_DIR_NAME
 
 
-def log_path_refusal(real: str):
-    """Why a log reader won't read `real` (a path with its links resolved): "own" when it is
-    inside the dashboard's own settings or state folder, "name" when its file name has no
-    ".log"; None when it may be read."""
-    for folder in (config_dir(), state_dir()):
+def cache_dir() -> Path:
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    return Path(base) / APP_DIR_NAME
+
+
+def _in_own_dir(real: str) -> bool:
+    """Whether `real` (a path with its links resolved) is one of the dashboard's own folders
+    (settings, state, the window's cache) or inside one."""
+    for folder in (config_dir(), state_dir(), cache_dir()):
         f = os.path.realpath(folder)
         try:
             if os.path.commonpath([real, f]) == f:
-                return "own"
+                return True
         except ValueError:
             pass
+    return False
+
+
+def log_path_refusal(real: str):
+    """Why a log reader won't read `real` (a path with its links resolved): "own" when it is
+    inside one of the dashboard's own folders (settings, state, cache), "name" when its file
+    name has no ".log"; None when it may be read."""
+    if _in_own_dir(real):
+        return "own"
     if ".log" not in os.path.basename(real):
         return "name"
     return None
@@ -42,16 +55,20 @@ def log_path_refusal(real: str):
 
 def ensure_private_dir(path: Path) -> None:
     """Create a folder (and parents) with mode 0700 for the last part. A folder that is
-    already there is set to 0700 too when it's the user's own, unless it's a shared one:
-    the home folder, a filesystem root or a sticky folder such as /tmp."""
+    already there is set to 0700 too only when it's one of the dashboard's own (or inside
+    one) and the user's, so a settings file named with --config never changes another
+    folder; a shared one (the home folder, a filesystem root or a sticky folder such as
+    /tmp) is always left as it is."""
     path = Path(path)
-    if not path.is_dir():
+    made = not path.is_dir()
+    if made:
         path.mkdir(parents=True, exist_ok=True)
     try:
         st = os.stat(path)
         real = os.path.realpath(path)
         if (stat.S_IMODE(st.st_mode) != 0o700 and st.st_uid == os.getuid() and not st.st_mode & stat.S_ISVTX
-                and real != os.path.realpath(os.path.expanduser("~")) and os.path.dirname(real) != real):
+                and real != os.path.realpath(os.path.expanduser("~")) and os.path.dirname(real) != real
+                and (made or _in_own_dir(real))):
             os.chmod(path, 0o700)
     except (OSError, AttributeError):   # AttributeError: no os.getuid (not a Unix)
         pass

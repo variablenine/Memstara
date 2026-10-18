@@ -1087,7 +1087,7 @@ export default function create(body, env) {
       sub = "FROM YOUR NODE · NOT ANSWERING";
       aria = `Node tree: your node isn't answering, so its connections can't be seen. ${drawnNote}`;
     } else if (src.restricted) {
-      why = "THIS RPC PORT HIDES THE PEER LIST · POINT THE DASHBOARD AT THE UNRESTRICTED PORT (SETTINGS → DATA SOURCE)";
+      why = "THIS RPC PORT HIDES THE PEER LIST · YOUR NODE'S UNRESTRICTED PORT SHOWS IT (SETTINGS → DATA SOURCE)";
       sub = "FROM YOUR NODE · PEER LIST HIDDEN BY THIS PORT";
       aria = `Node tree: this port hides the list of connections. ${drawnNote}`;
     } else if (!listKnown) {

@@ -820,7 +820,7 @@ export default function create(body, env) {
     setText(coreLongN, off ? "—" : f.num(node.bans_long));
     let why = null;
     if (off) why = `${t ? `LAST READ ${t} · ` : ""}NODE NOT ANSWERING${order.length ? " · THE DIM RINGS ARE ITS BANS THEN, STILL COUNTED DOWN" : ""}`;
-    else if (state === "hidden") why = "THIS RPC PORT HIDES THE BAN LIST · POINT THE DASHBOARD AT THE UNRESTRICTED PORT (SETTINGS → DATA SOURCE)";
+    else if (state === "hidden") why = "THIS RPC PORT HIDES THE BAN LIST · YOUR NODE'S UNRESTRICTED PORT SHOWS IT (SETTINGS → DATA SOURCE)";
     else if (state === "wait") why = "THE NODE HASN'T SAID WHICH ADDRESSES IT BANS YET";
     empty.hidden = !why;
     setText(empty, why || "");

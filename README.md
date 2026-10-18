@@ -12,8 +12,18 @@ on the node: it asks the node's RPC port the same questions `monerod`'s own
 read-only console commands ask (each one is a front end for an RPC request,
 see `src/daemon/rpc_command_executor.cpp` in Monero's source), and every
 method it can send is on one short list in `memstara/rpc.py`. Monero updates
-don't need dashboard updates. Besides RPC it reads only `monerod`'s own log
-file, read-only, for things RPC doesn't report.
+don't need dashboard updates. Besides RPC it reads `monerod`'s own log file,
+read-only, for things RPC doesn't report, and its own settings and history.
+[SAFETY.md](SAFETY.md#what-it-reads-on-this-computer) lists the few other
+look-ups, such as this computer's name, which it reads only so privacy mode
+can hide it.
+
+**Written with an AI assistant, not yet independently reviewed.** Memstara was
+written with Claude, an AI assistant. Nobody independent has checked its code
+yet, so please don't take its safety on trust: [SAFETY.md](SAFETY.md) lists
+what it reads, writes and never does, each with a command to check it, and
+[docs/REVIEW.md](docs/REVIEW.md) is a guide to reading the code, the files
+that matter for safety first.
 
 ![the app window on the NETWORK screen: a 3D tree of the node's connections with live chatter beside it](docs/screens.png)
 
@@ -144,7 +154,7 @@ If something's off:
 | What the screen says | What it means | What to do |
 |---|---|---|
 | THE NODE ISN'T ANSWERING | Nothing answered at the RPC address in Settings. | Check the node is running. It takes a minute or two to answer after a restart. If it listens somewhere else, put that address in Settings → Data source (TEST CONNECTION tries it). |
-| THIS IS A RESTRICTED RPC PORT (badge shows LIMITED) | The address points at a restricted port, which hides some readings (see [A restricted RPC port](#a-restricted-rpc-port)). | To see everything, put the node's unrestricted port in Settings → Data source, then SAVE. |
+| A RESTRICTED RPC PORT (badge shows LIMITED) | Nothing is wrong: the address points at a restricted port, where `monerod` hides some readings (see [A restricted RPC port](#a-restricted-rpc-port)). | To see everything, put the node's unrestricted port in Settings → Data source, then SAVE. |
 | THE NODE ISN'T ANSWERING · THE NODE WANTS A LOGIN | `monerod` runs with `--rpc-login`. | Type the user and password in Settings → Data source. |
 
 **Get updates later:**
@@ -207,8 +217,9 @@ computer on 18081, pick another local port, for example
 If you do bind the node's RPC to your local network instead
 (`--rpc-bind-ip <its LAN address> --confirm-external-bind`), also start it with
 `--rpc-login name:password` and put the same in Settings → Data source. Plain
-`http` on a network can still be read by anyone on it, and Memstara says so
-once in the log.
+`http` on a network can still be read and changed by anyone in between, who
+could turn one of Memstara's reads into a command, and Memstara says so once
+in the log.
 
 A Raspberry Pi with a desktop can also run Memstara itself (Raspberry Pi OS is
 Debian-based, so the Debian packages above apply), but that hasn't been
@@ -217,12 +228,19 @@ tested yet.
 ### A restricted RPC port
 
 A restricted port (`monerod --restricted-rpc`, or the second port that
-`--rpc-restricted-bind-port` adds) is a safety option: `monerod` itself
-refuses any change on it, whoever asks. Memstara works with one and shows
-LIMITED on the badge, but `monerod` doesn't answer every read there, so these
-stay empty: the peers and their counts (the NETWORK screen, panels C and D),
-traffic (the TRAFFIC screen), bans, sync details while it syncs, the node's
-uptime and version, and the disk space left. The commands that read the same
+`--rpc-restricted-bind-port` adds) is a second lock, kept by `monerod`
+itself: it refuses its admin commands there (stop, ban, limits, peer counts,
+mining, log level, pruning and the like), whoever asks, so you don't have to
+trust Memstara's own list for those. It still takes what wallets and miners
+send to any node, such as a transaction or a mined block (and, on a node that
+sells paid RPC access, payments for it); Memstara can't send those either.
+Memstara works with a restricted port and shows LIMITED on the badge, but
+`monerod` doesn't answer every read there, so these stay empty: the peers and
+their counts (the NETWORK screen, panels C and D), traffic (the TRAFFIC
+screen), bans, sync details while it syncs, the node's uptime and version, the
+disk space left and the blockchain's size, and how many apps use its RPC.
+There `monerod` also counts only the transactions it has already passed on, so
+the mempool's totals leave out any it hasn't. The commands that read the same
 things (`print_cn`, `print_pl`, `print_pool`, `bans`, `banned`, `sync_info`
 and a few more) don't work there either. To see everything, use the
 unrestricted port (through an SSH tunnel, as above, when the node is on
@@ -246,7 +264,8 @@ takes at most 1,000 blocks at a time (the console has no limit).
 Some things about the node aren't in any RPC answer, so the dashboard also
 reads `monerod`'s own log file, read-only (Settings → Node's log says where it
 is): reorgs, blocks that lost a race, bans as they happen, errors and
-warnings. That's all it reads besides RPC: nothing about the computer itself.
+warnings. That's all it reads besides RPC and its own files: nothing else
+about the computer.
 (Privacy mode looks up this computer's name, your user name, your real name
 and your home folder, only to hide them. When the window's packages are
 missing, it reads `/etc/os-release`, only to print the right install command.)
@@ -258,20 +277,26 @@ it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer
 
 ## Safety
 
+Each point below, and how to check it yourself, is in [SAFETY.md](SAFETY.md).
+
 - Only its own window can use it. The window gets its readings from the
-  app's own server on `127.0.0.1`, and that server answers only requests
-  carrying a key that is new at every start and that only the window gets. A
-  browser, or any other program or user on the computer, is turned away.
+  app's own server on `127.0.0.1`. That server gives its page and its
+  readings only to requests carrying a key that is new at every start and
+  that only the window gets. A browser, or any other program or user on the
+  computer, gets neither.
 - It only reads. Every RPC method it can send is on one list in
   `memstara/rpc.py`, each a read, and anything else is refused before a
   request is made. A test fails if one of `monerod`'s methods that change
-  something is ever added to that list (`tests/test_safety.py`).
+  something is ever added to that list, if any file but `rpc.py` and
+  `server.py` starts using the network, if Memstara's code runs another
+  program, or if a file is written from anywhere but the few places that keep
+  Memstara's own (`tests/test_safety.py`).
 - Requests that save its own settings or run a command also need a header
   only its own screens send, and requests from web pages are refused.
 - The window makes no requests to the internet and can't go to any other
   address. Fonts are bundled. Camera, microphone, location, downloads, pop-up
   windows and WebGL are all off.
-- It never writes to `monerod`'s files. Settings live in
+- It never writes to `monerod`'s files or anyone else's. Settings live in
   `~/.config/memstara/settings.json` (only your user can read it),
   history in `~/.local/state/memstara/`.
 - Keyboard shortcuts are off by default, so stray key presses do nothing, and
@@ -279,6 +304,8 @@ it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer
 
 ## For developers
 
+- `docs/REVIEW.md`: which files to read first to check it's safe, and what
+  to look for.
 - `docs/DESIGN.md`: the data contract between the server and the screens,
   the RPC calls and why, alert rules, `monerod`'s log, commands and
   settings.
@@ -289,8 +316,8 @@ it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer
   JavaScript modules, no build step).
 - Tests: `python3 -m unittest discover -s tests -v` (Python 3.10 or newer,
   nothing to install). They run against
-  `tests/fake_monerod.py`, a test-only stand-in that answers with recorded
-  `monerod` replies.
+  `tests/fake_monerod.py`, a test-only stand-in that answers with canned
+  replies in `monerod`'s own format, filled with made-up data.
 
 ## Credits
 

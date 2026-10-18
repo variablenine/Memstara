@@ -74,24 +74,24 @@ export function renderHeader(snap) {
   ].filter(Boolean);
   setText($("sb-plate"), plate.join(" · "));
 
-  // connection banner (node side)
+  // connection banner (node side): a problem as an alert; a restricted port as a calm note,
+  // which screen readers read when they get to it
   const banner = $("conn-banner");
+  const note = $("conn-note");
+  banner.hidden = !lost;
+  note.hidden = lost || !src.restricted;
   if (lost) {
-    banner.hidden = false;
     setData(banner, "level", "bad");
     const since = f.isNum(src.last_ok) && src.last_ok > 0 ? ` · LAST ANSWER ${f.dayClock(src.last_ok)}` : "";
     setText(banner, `■ THE NODE ISN'T ANSWERING${src.error ? " · " + String(src.error).toUpperCase() : ""}${since}`);
   } else if (src.restricted) {
-    banner.hidden = false;
-    setData(banner, "level", "warn");
-    setText(banner, "▲ THIS IS A RESTRICTED RPC PORT, SO PEERS, BANS, TRAFFIC AND DISK SPACE ARE HIDDEN. TO SEE THEM, PUT YOUR NODE'S UNRESTRICTED PORT IN SETTINGS → DATA SOURCE.");
-  } else {
-    banner.hidden = true;
+    setText(note, "· A RESTRICTED RPC PORT: MONEROD HIDES PEERS, BANS, TRAFFIC AND DISK SPACE HERE. TO SEE THEM, PUT YOUR NODE'S UNRESTRICTED PORT IN SETTINGS → DATA SOURCE.");
   }
 }
 
 export function renderServerLost(lastGood) {
   const banner = $("conn-banner");
+  $("conn-note").hidden = true;
   banner.hidden = false;
   setData(banner, "level", "bad");
   setText(banner, `■ THE DASHBOARD SERVER ISN'T ANSWERING${lastGood ? " · LAST DATA " + f.dayClock(lastGood) : ""} · IS python3 -m memstara STILL RUNNING?`);

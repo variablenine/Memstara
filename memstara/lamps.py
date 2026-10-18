@@ -74,7 +74,7 @@ def compute(ctx: dict) -> list[tuple[str, str, str]]:
     elif not answering:
         put("node", "warn", "NOT ANSWERING")
     elif restricted:
-        put("node", "warn", "RESTRICTED")
+        put("node", "ok", "RESTRICTED")
     else:
         put("node", "ok", "ANSWERING")
 

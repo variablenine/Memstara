@@ -328,8 +328,8 @@ class Poller:
         self.answering_prev = True
         self._bootstrap_events(bootstrap, now)
         if restricted and not self.restricted_prev:
-            self.add_event("source", "This is a restricted RPC port: point the dashboard at the admin "
-                                     "(unrestricted) port to see peers, bans, traffic and disk space", "warn", now)
+            self.add_event("source", "This is a restricted RPC port, so monerod hides peers, bans, traffic and "
+                                     "disk space here. To see them, use its unrestricted port", "info", now)
         if bootstrap is None:
             self.restricted_prev = restricted
 

@@ -28,7 +28,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import desktop
-from .util import REPO_DIR, atomic_write, ensure_private_dir, state_dir as default_state_dir
+from .util import REPO_DIR, atomic_write, cache_dir, ensure_private_dir, state_dir as default_state_dir
 
 APP_ID = desktop.APP_ID
 TITLE = desktop.NAME
@@ -413,8 +413,7 @@ class WindowApp:
             # key and all (set before the first view, so it applies to every view)
             WebKit.WebContext.get_default().set_cache_model(WebKit.CacheModel.DOCUMENT_VIEWER)
             data = self.state_dir / "window-data"   # remembers the open screen
-            cache_base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-            cache = Path(cache_base) / self.state_dir.name / "window-cache"
+            cache = cache_dir().parent / self.state_dir.name / "window-cache"
             for folder in (data, cache):
                 ensure_private_dir(folder)
             self.session = WebKit.NetworkSession.new(str(data), str(cache))

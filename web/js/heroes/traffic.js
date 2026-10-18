@@ -321,7 +321,7 @@ export default function create(body, env) {
     limitDash.hidden = !(limits.showDown || limits.showUp);
 
     let why = null;
-    if (src.restricted) why = "THIS RPC PORT DOESN'T SHARE TRAFFIC NUMBERS · POINT THE DASHBOARD AT THE UNRESTRICTED PORT (SETTINGS → DATA SOURCE)";
+    if (src.restricted) why = "THIS RPC PORT DOESN'T SHARE TRAFFIC NUMBERS · YOUR NODE'S UNRESTRICTED PORT SHOWS THEM (SETTINGS → DATA SOURCE)";
     else if (!answering) why = "YOUR NODE ISN'T ANSWERING · THE LINES BREAK UNTIL IT DOES";
     else if (!D.some((v) => v !== null) && !U.some((v) => v !== null)) why = "COLLECTING · THE LINES START WITH THE NEXT READINGS";
     empty.hidden = !why;

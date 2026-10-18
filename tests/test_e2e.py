@@ -275,7 +275,7 @@ class RestrictedTest(unittest.TestCase):
             self.assertIsNone(snap["node"]["bans"])
             self.assertEqual(snap["alerts"], [], "missing data must not fire peers/disk alerts")
             lamps = lamps_by_id(snap)
-            self.assertEqual(lamps["node"]["value"], "RESTRICTED")
+            self.assertEqual((lamps["node"]["state"], lamps["node"]["value"]), ("ok", "RESTRICTED"))
             self.assertEqual(lamps["peers"]["state"], "off")
             self.assertIn("restricted RPC port", " ".join(e["text"] for e in snap["events"]))
             self.assertNotIn("get_connections", rig.fake.calls)

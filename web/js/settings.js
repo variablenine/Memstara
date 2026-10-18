@@ -14,7 +14,7 @@ const locked = (s) => isPrivate() && PRIVATE_TYPES.has(s.type);
 const SECTIONS = [
   { id: "source", title: "DATA SOURCE", intro: [
     "Where the numbers come from: your node's RPC port. The unrestricted one shows everything. ",
-    "A restricted one (--restricted-rpc, or the port from --rpc-restricted-bind-port) hides peers, bans, traffic and disk space, and monerod itself refuses any change on it."] },
+    "A restricted one (--restricted-rpc, or the port from --rpc-restricted-bind-port) hides peers, bans, traffic and disk space, and monerod refuses its admin commands there (stop, ban, limits, mining and the like)."] },
   { id: "thresholds", title: "ALERT LIMITS", intro: ["When a lamp lights. Changing these only changes the dashboard."] },
   { id: "grace", title: "WAIT BEFORE ALERTING", intro: [
     "How long a problem has to last before it counts, so normal restarts (updates, network changes) don't set anything off."] },
@@ -339,10 +339,10 @@ async function testConnection(btn, res) {
     const r = await api.testConnection(body);
     clear(res);
     if (r.ok) {
-      setData(res, "level", r.restricted ? "warn" : "ok");
+      setData(res, "level", "ok");
       res.append(el("span", { text: `● ANSWERED IN ${Math.round(r.latency_ms ?? 0)} ms · MONEROD ${r.version || "?"} · HEIGHT ${f.num(r.height)}` }));
       res.append(el("span", { text: r.restricted
-        ? "▲ THIS IS A RESTRICTED PORT: PEERS, BANS, TRAFFIC AND DISK SPACE WILL BE HIDDEN. YOUR NODE'S UNRESTRICTED PORT SHOWS THEM."
+        ? "RESTRICTED PORT · PEERS, BANS, TRAFFIC AND DISK SPACE WILL BE HIDDEN. SAVE TO USE IT, OR USE YOUR NODE'S UNRESTRICTED PORT TO SEE THEM."
         : "UNRESTRICTED PORT · THE DASHBOARD CAN SEE EVERYTHING IT NEEDS. SAVE TO USE IT." }));
     } else {
       setData(res, "level", "bad");
@@ -363,11 +363,11 @@ function about() {
   h("WHAT THIS IS");
   p("A console for one Monero node. It runs on the same computer as the node, or on another one reaching it over the network, and talks to monerod only through its normal RPC port, so Monero itself is never changed and updates to Monero don't need updates here.");
   h("WHAT IT READS");
-  p("What monerod's RPC port answers, and monerod's own log file (Settings → Node's log). Nothing else.");
+  p("What monerod's RPC port answers, monerod's own log file (Settings → Node's log) and its own settings and history. It also looks up this computer's name, your user name, your real name and your home folder, only so privacy mode can hide them. The full list, each point with a command to check it, is in ", el("code", { text: "SAFETY.md" }), ".");
   h("WHAT IT CAN CHANGE");
   p("Nothing on the node: every RPC method it can send is a read, listed in ", el("code", { text: "memstara/rpc.py" }), ". It never writes to monerod's files or anyone else's, and it loads nothing from the internet: fonts and code are all local.");
   h("SAFETY");
-  p("It only listens on 127.0.0.1, so other devices can't open it. It refuses requests that don't come from its own page, so a website you visit can't use it either.");
+  p("It only listens on 127.0.0.1, so other devices can't open it. Its page and readings need a key only its own window has, so a website you visit can't use it either.");
   h("LOOK");
   p("The style follows real control-room conventions (annunciator lamp walls, \"grey is normal\" screens, event logs) and the general feel of cinematic sci-fi interface art such as the SCENESCAPES gallery on uispace.org. No code, artwork or wording from that gallery is used.");
   h("FONTS");

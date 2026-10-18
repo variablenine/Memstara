@@ -35,7 +35,7 @@ export function runBoot(snapPromise, settings) {
         const src = snap.source || {};
         await show(line("DATA SOURCE", `LIVE · ${src.rpc || "—"}`, "ok"));
         await show(line("NODE ANSWERS", src.answering === false ? `NO · ${String(src.error || "").toUpperCase()}` : `YES · ${f.isNum(src.latency_ms) ? Math.round(src.latency_ms) + " ms" : ""}`, src.answering === false ? "bad" : "ok"));
-        if (src.answering !== false) await show(line("RPC PORT", src.restricted ? "RESTRICTED · LIMITED DATA" : "UNRESTRICTED · FULL DATA", src.restricted ? "warn" : "ok"));
+        if (src.answering !== false) await show(line("RPC PORT", src.restricted ? "RESTRICTED · LIMITED DATA" : "UNRESTRICTED · FULL DATA", "ok"));
         const lit = (snap.lamps || []).filter((l) => l.state === "warn" || l.state === "bad").length;
         await show(line("LAMP TEST", `${f.plural((snap.lamps || []).length, "LAMP", "LAMPS")} · ${lit} LIT`, lit ? "warn" : "ok"));
       }

@@ -7,7 +7,7 @@ import argparse
 import sys
 
 from . import VERSION
-from .settings import Settings, SettingsError
+from .settings import Settings, SettingsError, not_settings_file
 
 
 def parse_args(argv=None):
@@ -51,6 +51,9 @@ def main(argv=None) -> int:
         shows the first copy's window)."""
         from .app import App   # imported late so --help stays instant
         from .poller import _hostport
+        if args.config and not_settings_file(args.config):
+            raise window.StartError("%s isn't a Memstara settings file, so it was left as it is. Start "
+                                    "without --config, or give it a file that doesn't exist yet." % args.config)
         try:
             settings = Settings(args.config).load()
         except OSError as e:
