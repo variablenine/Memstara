@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import helpers
-from helpers import WRITE, StubDiscover, StubHost, found_node, get_json, request
+from helpers import WRITE, get_json, request
 from fake_monerod import FakeMonerod
 from memstara.app import App
 from memstara.server import CSP, _same, build_static_map
@@ -38,9 +38,7 @@ class ServerTest(unittest.TestCase):
         cls.fake = FakeMonerod().start()
         cls.settings = Settings(base / "cfg" / "settings.json", log=lambda m: None).load()
         cls.settings.update({"source.rpc_url": cls.fake.url})
-        cls.discover = StubDiscover([found_node(cls.fake.url)])
-        cls.app = App(cls.settings, port=0, web_dir=web, state_dir=base / "state", log=lambda m: None,
-                      host_reader=StubHost(), discover=cls.discover)
+        cls.app = App(cls.settings, port=0, web_dir=web, state_dir=base / "state", log=lambda m: None)
         cls.app.start(poll=False)
         cls.app.poller.poll_once()
         cls.port = cls.app.port
@@ -170,7 +168,7 @@ class ServerTest(unittest.TestCase):
         st, body = get_json(self.port, "/api/history?window=900")
         self.assertEqual(st, 200)
         self.assertEqual(set(body), {"window", "step", "t", "out", "in", "tor", "pool", "rate_in", "rate_out",
-                                     "latency", "cpu_temp_c", "node_cpu_pct"})
+                                     "latency"})
         st, body = get_json(self.port, "/api/history")
         self.assertEqual(body["window"], 3600)
 
@@ -179,21 +177,14 @@ class ServerTest(unittest.TestCase):
             st, _, _ = request(self.port, "GET", path)
             self.assertEqual(st, 404, path)
 
-    def test_discover_is_guarded(self):
-        """It runs ps and reads other processes' flags, so it's guarded like a change (GET, though)."""
-        n = self.discover.calls
+    def test_no_discover(self):
+        """Nothing reads other processes to find the node: there's no /api/discover."""
         good = {"X-Memstara": "1", "Origin": "http://127.0.0.1:%d" % self.port}
-        for headers in ({}, {"X-Memstara": "1", "Origin": "http://evil.example"},
-                        {"X-Memstara": "1", "Sec-Fetch-Site": "cross-site"}, {"Origin": good["Origin"]}):
-            st, _, _ = request(self.port, "GET", "/api/discover", headers=headers)
-            self.assertEqual(st, 403, headers)
-        self.assertEqual(self.discover.calls, n, "nothing was looked up")
-        st, body = get_json(self.port, "/api/discover", headers=good)
-        self.assertEqual(st, 200)
-        self.assertEqual(set(body), {"ok", "error", "found"})
-        self.assertEqual(body["found"][0]["rpc_url"], self.fake.url)
+        for headers in ({}, good):
+            st, body = get_json(self.port, "/api/discover", headers=headers)
+            self.assertEqual((st, body), (404, {"error": "No such API"}), headers)
         st, _, _ = request(self.port, "POST", "/api/discover", {}, headers=WRITE)
-        self.assertEqual(st, 405)
+        self.assertEqual(st, 404)
 
     def test_settings_api(self):
         st, body = get_json(self.port, "/api/settings")
@@ -277,8 +268,7 @@ class WindowKeyTest(unittest.TestCase):
         cls.fake = FakeMonerod().start()
         cls.settings = Settings(base / "cfg" / "settings.json", log=lambda m: None).load()
         cls.settings.update({"source.rpc_url": cls.fake.url})
-        cls.app = App(cls.settings, port=0, web_dir=web, state_dir=base / "state", log=lambda m: None,
-                      host_reader=StubHost(), discover=StubDiscover([found_node(cls.fake.url)]), key=cls.KEY)
+        cls.app = App(cls.settings, port=0, web_dir=web, state_dir=base / "state", log=lambda m: None, key=cls.KEY)
         cls.app.start(poll=False)
         cls.app.poller.poll_once()
         cls.port = cls.app.port

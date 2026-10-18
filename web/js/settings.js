@@ -13,11 +13,8 @@ const locked = (s) => isPrivate() && PRIVATE_TYPES.has(s.type);
 
 const SECTIONS = [
   { id: "source", title: "DATA SOURCE", intro: [
-    "Where the numbers come from: your node's unrestricted RPC port. FIND MY NODE reads the running monerod's own settings and shows its ports. ",
-    "The panels only read. Changes happen only through monerod's own commands (COMMANDS, and the ban shortcuts in panel E), and each one asks you to confirm."] },
-  { id: "local", title: "COMPUTER READS", intro: [
-    "Things RPC doesn't report, read straight from this computer: monerod's log file, the monerod process (CPU, memory, disk, its flags), each peer's round trip, CPU temperature, power, the network link the node is bound to and, if you use one, the Tor proxy. ",
-    "Read-only. Turning this off hides panel J and the round trips."] },
+    "Where the numbers come from: your node's RPC port. The unrestricted one shows everything. ",
+    "A restricted one (--restricted-rpc, or the port from --rpc-restricted-bind-port) hides peers, bans, traffic and disk space, and monerod itself refuses any change on it."] },
   { id: "thresholds", title: "ALERT LIMITS", intro: ["When a lamp lights. Changing these only changes the dashboard."] },
   { id: "grace", title: "WAIT BEFORE ALERTING", intro: [
     "How long a problem has to last before it counts, so normal restarts (updates, network changes) don't set anything off."] },
@@ -25,7 +22,7 @@ const SECTIONS = [
   { id: "panels", title: "PANELS", intro: ["Show or hide panels. Hidden panels stop drawing but the dashboard keeps watching."] },
   { id: "chain", title: "CHAIN", intro: ["The block tape in panel B."] },
   { id: "node", title: "NODE'S LOG", intro: [
-    "Where monerod writes its log. FIND MY NODE fills this in from the node's own --log-file or --data-dir. The dashboard only reads it."] },
+    "Where monerod writes its log: its --log-file, else bitmonero.log in its data folder. The dashboard only reads it."] },
   { id: "server", title: "WINDOW", intro: ["How the app window talks to the part of the app that reads your node, on this computer only. Changes here take effect the next time the app starts."] },
   { id: "about", title: "ABOUT", intro: [] },
 ];
@@ -195,11 +192,8 @@ function renderForm() {
     const res = el("div", { class: "testresult", hidden: true, role: "status" });
     const btn = el("button", { class: "btn", type: "button", text: "TEST CONNECTION" });
     btn.addEventListener("click", () => testConnection(btn, res));
-    const find = el("button", { class: "btn", type: "button", text: "FIND MY NODE" });
-    const found = el("div", { class: "found", hidden: true, role: "status" });
-    find.addEventListener("click", () => findNode(find, found));
-    actions.append(btn, find);
-    form.append(actions, res, found);
+    actions.append(btn);
+    form.append(actions, res);
   }
   if (fields.length && sec.id !== "server") {
     const held = fields.some(locked);
@@ -348,7 +342,7 @@ async function testConnection(btn, res) {
       setData(res, "level", r.restricted ? "warn" : "ok");
       res.append(el("span", { text: `● ANSWERED IN ${Math.round(r.latency_ms ?? 0)} ms · MONEROD ${r.version || "?"} · HEIGHT ${f.num(r.height)}` }));
       res.append(el("span", { text: r.restricted
-        ? "▲ THIS IS A RESTRICTED PORT: PEERS, BANS AND DISK SPACE WILL BE HIDDEN. FIND MY NODE SHOWS THE UNRESTRICTED ONE."
+        ? "▲ THIS IS A RESTRICTED PORT: PEERS, BANS, TRAFFIC AND DISK SPACE WILL BE HIDDEN. YOUR NODE'S UNRESTRICTED PORT SHOWS THEM."
         : "UNRESTRICTED PORT · THE DASHBOARD CAN SEE EVERYTHING IT NEEDS. SAVE TO USE IT." }));
     } else {
       setData(res, "level", "bad");
@@ -362,49 +356,6 @@ async function testConnection(btn, res) {
   }
 }
 
-// Lists the monerod processes running as you, read from their own flags and
-// config file; USE THIS fills in the address and log file (SAVE keeps them).
-async function findNode(btn, box) {
-  btn.disabled = true;
-  box.hidden = false;
-  setData(box, "level", null);
-  clear(box).append(el("p", { class: "fhelp", text: "LOOKING FOR MONEROD…" }));
-  try {
-    const r = await api.discover();
-    clear(box);
-    const found = Array.isArray(r?.found) ? r.found : [];
-    if (!found.length) {
-      setData(box, "level", "warn");
-      box.append(el("p", { class: "fhelp", text: `▲ NO MONEROD RUNNING AS YOUR USER${r?.error ? " · " + String(r.error).toUpperCase() : ""}. START YOUR NODE, THEN TRY AGAIN.` }));
-      return;
-    }
-    for (const n of found) {
-      const use = el("button", { class: "btn", type: "button", text: "USE THIS", disabled: !n.rpc_url || n.restricted || isPrivate(),
-        title: isPrivate() ? "Turn privacy mode off first: the address it fills in is hidden" : null });
-      use.addEventListener("click", () => {
-        draft["source.rpc_url"] = n.rpc_url;
-        if (n.log_file && schema.some((s) => s.key === "node.log_path")) draft["node.log_path"] = n.log_file;
-        render();
-        msg("ADDRESS FILLED IN · SAVE TO USE IT", "ok");
-      });
-      const lines = [
-        `PID ${n.pid} · ${String(n.nettype || "mainnet").toUpperCase()}${n.exe ? " · " + n.exe : ""}`,
-        `RPC ${n.rpc_url || "—"}${n.restricted ? " · RESTRICTED" : " · UNRESTRICTED"}${n.login_needed ? " · NEEDS A LOGIN" : ""}`,
-        n.restricted_rpc_url ? `ALSO A RESTRICTED PORT AT ${n.restricted_rpc_url}` : null,
-        n.log_file ? `LOG ${n.log_file}` : null,
-        n.tx_proxy ? "SENDS TRANSACTIONS THROUGH TOR OR I2P" : null,
-      ].filter(Boolean);
-      box.append(el("div", { class: "found-row" }, el("div", {}, ...lines.map((t) => el("p", { text: t }))), use));
-    }
-  } catch (e) {
-    clear(box);
-    setData(box, "level", "bad");
-    box.append(el("p", { class: "fhelp", text: "■ COULDN'T LOOK · " + String(e.message).toUpperCase() }));
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 function about() {
   const d = el("div", { class: "about" });
   const p = (...kids) => d.append(el("p", {}, ...kids));
@@ -412,9 +363,9 @@ function about() {
   h("WHAT THIS IS");
   p("A console for one Monero node. It runs on the same computer as the node, or on another one reaching it over the network, and talks to monerod only through its normal RPC port, so Monero itself is never changed and updates to Monero don't need updates here.");
   h("WHAT IT READS");
-  p("Everything monerod's RPC port answers, plus what RPC doesn't report, read from the computer itself: monerod's log file, the monerod process, each peer's round trip, CPU temperature, power, the network link the node is bound to and, if you use one, the Tor proxy (Settings → Computer reads).");
+  p("What monerod's RPC port answers, and monerod's own log file (Settings → Node's log). Nothing else.");
   h("WHAT IT CAN CHANGE");
-  p("Exactly what monerod's own console commands can change, nothing more: each command in the COMMANDS drawer sends the same RPC request monerod's console sends for it, and every change asks you to type a word to confirm. A few get a safety limit the console doesn't have (bans of public addresses only, at most 1,000 blocks per request). It never writes to monerod's files or anyone else's, and it loads nothing from the internet: fonts and code are all local.");
+  p("Nothing on the node: every RPC method it can send is a read, listed in ", el("code", { text: "memstara/rpc.py" }), ". It never writes to monerod's files or anyone else's, and it loads nothing from the internet: fonts and code are all local.");
   h("SAFETY");
   p("It only listens on 127.0.0.1, so other devices can't open it. It refuses requests that don't come from its own page, so a website you visit can't use it either.");
   h("LOOK");

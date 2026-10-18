@@ -13,9 +13,10 @@ Private here means what could point at you, this computer or your node:
 - IP addresses (IPv4 and IPv6, but not loopback or 0.0.0.0) and address ranges
   ("1.2.x.x", "1.2.3.0/24", and the net16/net24 keys), onion and I2P addresses, MAC
   addresses, the login in a URL, and a remote node's name in an RPC address;
-- ports: every port key, "port 47213" in text, a port written after a hidden address
-  ("1.2.3.4:47213"), and your node's own ports wherever they turn up once learned (from
-  monerod's --p2p-bind-port flag);
+- ports: every port key, "port 47213" in text, and a port written after a hidden address
+  ("1.2.3.4:47213") or after 0.0.0.0 or :: ("0.0.0.0:47213", "[::]:47213": where monerod
+  listens, so your node's own p2p port; the address itself is shown). Loopback addresses
+  and their ports are shown too (the RPC address on this computer, 127.0.0.1:18081);
 - this computer's name, your user name and your real name (as whole words), and your
   home folder (shown as ~);
 - Monero addresses, transaction ids and key images (any run of 64 or more hex digits, so a
@@ -52,16 +53,12 @@ FLAG_NOT_RELAYED = 2      # pool.py: the node hasn't passed the transaction on y
 # keys (the last part of a dotted settings key counts too, see _str) and what they hold
 PORT_KEYS = frozenset({"port", "p2p_port", "rpc_port", "local_port", "remote_port"})
 NET_KEYS = frozenset({"net", "net16", "net24"})          # "1.2" (a /16) or "1.2.3" (a /24)
-HOST_NAME_KEYS = frozenset({"host_name", "hostname"})
 PEER_ID_KEYS = frozenset({"peer_id"})
 USER_KEYS = frozenset({"rpc_user", "user", "username"})
 URL_KEYS = frozenset({"rpc", "bootstrap_daemon_address", "bootstrap"})   # and any key ending in "url"
 # 64-hex values left as they are: block hashes, public, what the chain screens are made of
 BLOCK_HASH_KEYS = frozenset({"hash", "top_hash", "top_block_hash", "prev_hash", "block_hash", "prev_id",
                              "main_chain_parent_block", "block_hashes"})
-# where the node's own ports are learned from (not the peers' ports)
-OWN_PARTS = ("host",)
-OWN_PORT_FLAGS = ("--p2p-bind-port", "--p2p-bind-port-ipv6")
 
 # words too common to hide everywhere as a name (as a user name, the home folder still goes)
 GENERIC_NAMES = frozenset({
@@ -89,8 +86,10 @@ _FIXED = [
     ("v6b", r"\[[0-9a-fA-F:.]+(?:%[\w.-]+)?\](?::\d{1,5}(?!\d))?"),
     ("v4", r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?:/\d{1,2}(?!\d)|:\d{1,5}(?!\d))?(?!\d|\.\d)"),
     ("v4x", r"(?<![\w.])\d{1,3}\.\d{1,3}(?:\.\d{1,3}\.[x*]|\.[x*]\.[x*])(?!\w|\.\w)"),
-    ("v6", r"(?<![\w:.])(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F.]*(?:%[\w.-]+)?(?![\w:])"),
-    ("port", r"(?i:\bports?\b)[ \t:#=]{0,3}\d{2,5}(?:[ \t]*(?:,|\band\b)[ \t]*\d{2,5}|[ \t]+\d{4,5})*(?!\w|\.\d)"),
+    ("v6", r"(?<![\w:.])(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F.]*(?:%[\w.-]+)?(?::\d{1,5})?(?![\w:])"),
+    # "port 47213", and monerod's "External port defined as 47213"
+    ("port", r"(?i:\bports?\b(?: defined as)?)[ \t:#=]{0,3}\d{2,5}"
+             r"(?:[ \t]*(?:,|\band\b)[ \t]*\d{2,5}|[ \t]+\d{4,5})*(?!\w|\.\d)"),
 ]
 _DIGITS = re.compile(r"\d{2,5}")
 
@@ -101,6 +100,18 @@ def _ok_port(v) -> str | None:
     if s.isdigit() and 0 < int(s) < 65536:
         return str(int(s))
     return None
+
+
+def _unspecified(text: str) -> bool:
+    """Whether an address is 0.0.0.0 or :: (also written ::ffff:0.0.0.0): every address
+    this computer has, as a program listening on all of them writes it."""
+    try:
+        a = ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    if a.version == 6 and a.ipv4_mapped is not None:
+        a = a.ipv4_mapped
+    return a.is_unspecified
 
 
 def _user_info():
@@ -135,7 +146,6 @@ class Redactor:
         self._add_name("user", self.user)
         for word in re.split(r"[\s,]+", real or ""):
             self._add_name("name", word)
-        self._ports: set = set()          # this node's own ports, learned from the readings
         self._cache = None                # (snapshot dict, its redacted JSON)
         self._compile()
 
@@ -148,9 +158,6 @@ class Redactor:
         parts = list(_FIXED)
         if self.home and self.home not in ("", "/"):
             parts.insert(1, ("home", re.escape(self.home) + r"(?=/|$|[^\w.-])"))
-        if self._ports:
-            alts = "|".join(sorted(self._ports, key=len, reverse=True))
-            parts.append(("own", r"(?<![\w.])(?:%s)(?![\w]|\.\d)" % alts))
         if self._names:
             alts = "|".join(re.escape(w) for w in sorted(self._names, key=len, reverse=True))
             parts.append(("word", r"(?i:(?<![\w.-])(?:%s)(?![\w-]))" % alts))
@@ -177,14 +184,16 @@ class Redactor:
         return self.token("ip" if a.version == 4 else "ip6", a.compressed)
 
     def _port_after(self, port: str) -> str:
-        """The port written after a hidden address ("1.2.3.4:47213"): hidden too, so this
-        node's own port goes even before it has been learned."""
+        """The port written after a hidden address ("1.2.3.4:47213"), or after 0.0.0.0 or ::
+        ("0.0.0.0:47213", where monerod listens on its own p2p port): hidden too."""
         p = _ok_port(port)
         return self.token("port", p) if p else port
 
     def _v4(self, m: str) -> str:
         addr, colon, port = m.partition(":")
         if colon:
+            if _unspecified(addr):
+                return addr + ":" + self._port_after(port)
             tok = self._v4(addr)
             return m if tok == addr else tok + ":" + self._port_after(port)
         addr, _, prefix = m.partition("/")
@@ -194,6 +203,7 @@ class Redactor:
             return m
         if any(o > 255 for o in octets) or octets[0] in (0, 127):
             return m                       # a version number ("0.18.5.3") or loopback
+        addr = ".".join(str(o) for o in octets)     # "203.0.113.09" as 203.0.113.9
         if not prefix:
             return self._ip(addr) or m
         bits = int(prefix)
@@ -220,9 +230,20 @@ class Redactor:
     def _v6(self, m: str) -> str:
         # a sentence's full stop or a stray colon can end up on the end of the match
         for core in (m.rstrip("."), m.rstrip(".:")):
-            tok = self._ip(core.partition("%")[0])
+            addr, _, zone = core.partition("%")
+            tok = ":" not in zone and self._ip(addr)     # a port after the zone: below
             if tok:
                 return tok + m[len(core):]
+        # an address and a port without brackets, as monerod writes where it listens over IPv6
+        # ("2001:db8::5:47213", or ":::47213" on every address)
+        core = m.rstrip(".")
+        addr, _, port = core.rpartition(":")
+        if _ok_port(port):
+            if _unspecified(addr):
+                return addr + ":" + self._port_after(port) + m[len(core):]
+            tok = self._ip(addr.partition("%")[0])
+            if tok:
+                return tok + ":" + self._port_after(port) + m[len(core):]
         return m
 
     def _sub(self, m: re.Match) -> str:
@@ -245,7 +266,7 @@ class Redactor:
             end = s.rindex("]")
             inner, port = s[1:end], s[end + 2:]
             red = self._v6(inner)
-            if red == inner:
+            if red == inner and not (port and _unspecified(inner)):
                 return s
             return "[" + red + "]" + (":" + self._port_after(port) if port else "")
         if kind == "v4":
@@ -256,8 +277,6 @@ class Redactor:
             return self._v6(s)
         if kind == "port":
             return _DIGITS.sub(lambda d: self.token("port", _ok_port(d.group()) or d.group()), s)
-        if kind == "own":
-            return self.token("port", s)
         if kind == "word":
             low = s.lower()
             return self.token(self._names.get(low, "name"), low)
@@ -271,55 +290,28 @@ class Redactor:
 
     # ------------------------------------------------------------------ learning
     def learn(self, snap: dict):
-        """Notes this node's own ports in a snapshot, so they're hidden wherever else they turn
-        up (log lines, flags, the route's wording)."""
-        ports = set()
-
-        def visit(v, own):
-            if isinstance(v, dict):
-                for k, x in v.items():
-                    if own and k in PORT_KEYS and not isinstance(x, bool) and _ok_port(x):
-                        ports.add(_ok_port(x))
-                    visit(x, own)
-            elif isinstance(v, list):
-                for x in v:
-                    visit(x, own)
-
-        if not isinstance(snap, dict):
+        """Notes the node's computer by name when a snapshot's RPC address names one
+        ("node.lan:18081"), so it's hidden everywhere, as this computer's own name is
+        (addresses go by the address patterns)."""
+        rpc = (snap.get("source") or {}).get("rpc") if isinstance(snap, dict) else None
+        if not isinstance(rpc, str):
             return
-        for part in OWN_PARTS:
-            visit(snap.get(part), True)
-        flags = (((snap.get("host") or {}).get("proc") or {}).get("flags")) or []
-        for i, fl in enumerate(flags if isinstance(flags, list) else []):
-            if not isinstance(fl, str):
-                continue
-            name, eq, val = fl.partition("=")
-            if name in OWN_PORT_FLAGS:
-                v = val if eq else (flags[i + 1] if i + 1 < len(flags) else "")
-                if isinstance(v, str) and _ok_port(v):
-                    ports.add(_ok_port(v))
-        # the node's computer by name, when it's another one ("node.lan:18081"): hidden everywhere,
-        # as this computer's own name is (addresses go by the address patterns)
-        names = set()
-        rpc = (snap.get("source") or {}).get("rpc")
-        if isinstance(rpc, str):
-            try:
-                h = urlsplit("//" + rpc).hostname or ""
-            except ValueError:
-                h = ""
-            try:
-                ipaddress.ip_address(h)
-            except ValueError:
-                if h and h != "localhost":
-                    names.add(h)
+        try:
+            h = urlsplit("//" + rpc).hostname or ""
+        except ValueError:
+            return
+        try:
+            ipaddress.ip_address(h)
+            return                        # an address: the address patterns hide it
+        except ValueError:
+            pass
+        if not h or h == "localhost":
+            return
         with self._lock:
             n_names = len(self._names)
-            for h in names:
-                self._add_name("host", h)
-            if ports <= self._ports and len(self._names) == n_names:
-                return
-            self._ports |= ports
-            self._compile()
+            self._add_name("host", h)
+            if len(self._names) != n_names:
+                self._compile()
 
     # ------------------------------------------------------------------ answers
     def redact(self, obj):
@@ -437,8 +429,6 @@ class Redactor:
             p = _ok_port(s)
             if p:
                 return self.token("port", p)
-        elif base in HOST_NAME_KEYS:
-            return self.token("host", s.strip())
         elif base in PEER_ID_KEYS:
             return self.token("id", s.strip())
         elif base in USER_KEYS:

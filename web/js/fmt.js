@@ -125,21 +125,6 @@ export function pct(v, digits = 1) {
   return v.toFixed(digits).replace(/\.0$/, "") + "%";
 }
 
-// Sensors report Celsius. display.temp_unit picks °F or °C; "auto" uses °F
-// where the computer's language is US English (navigator.language, which
-// WebKitGTK takes from the locale) and °C everywhere else.
-let tempF = false;
-export function setTempUnit(mode) {
-  const lang = (typeof navigator !== "undefined" && navigator.language) || "";
-  tempF = mode === "f" || (mode !== "c" && /^en-US(?![a-z0-9])/i.test(lang));   // "en-US", "en-US@posix"
-}
-export const tempUnit = () => (tempF ? "°F" : "°C");
-export const tempValue = (c) => (isNum(c) ? (tempF ? (c * 9) / 5 + 32 : c) : null);
-export function temp(c) {
-  return isNum(c) ? `${Math.round(tempValue(c))} ${tempUnit()}` : DASH;
-}
-setTempUnit("auto");
-
 export function ms(v) {
   if (!isNum(v)) return DASH;
   return v < 10 ? `${v.toFixed(1).replace(/\.0$/, "")} ms` : `${num(Math.round(v))} ms`;

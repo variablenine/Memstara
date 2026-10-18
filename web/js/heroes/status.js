@@ -28,7 +28,6 @@ import { el, svg, setText, setData } from "../dom.js";
 import { api } from "../api.js";
 import * as f from "../fmt.js";
 import { describe as describeLamp } from "../panels/lamps.js";   // plain-words help for the core lamps
-import { HOT } from "../panels/computer.js";      // °C: the COMPUTER screen's heads-up / problem limits
 import { createStage, glowSprite, stamp, moving, clamp, cssRGB, TAU } from "../fx/space.js";
 
 const SWEEP_S = 11;            // seconds for the sweep to go round once
@@ -39,12 +38,12 @@ const RIPPLE_S = 2.4;          // a new block's ripple, centre to rim
 const ARC_START = 0.625 * TAU; // the gauges start at half past seven (clock angle, clockwise from 12)
 const ARC_SPAN = 0.75 * TAU;   // and run three quarters of the way round
 const ARC_R = [0.72, 0.595, 0.47];   // gauge radii, as a share of the ring's radius
-const SCREEN_NAME = { network: "NETWORK", chain: "CHAIN", mempool: "MEMPOOL", traffic: "TRAFFIC", computer: "COMPUTER", status: "STATUS" };
+const SCREEN_NAME = { network: "NETWORK", chain: "CHAIN", mempool: "MEMPOOL", traffic: "TRAFFIC", status: "STATUS" };
 const STATE_WORD = { ok: "NORMAL", warn: "HEADS-UP", bad: "PROBLEM", off: "OFF OR NOT KNOWN" };
 const RANK = { off: 0, ok: 0, warn: 1, bad: 2 };
 const HISTORY_S = 900;         // the faint traces behind the vital readings: the last 15 min
 const HISTORY_EVERY_MS = 15000;   // asked for again this often; each reading moves the newest point meanwhile
-const TRACE_KEYS = ["out", "in", "pool", "rate_in", "rate_out", "cpu_temp_c"];
+const TRACE_KEYS = ["out", "in", "pool", "rate_in", "rate_out"];
 const GAP_BARS = 24;           // block gaps drawn behind LAST BLOCK
 const RATE_S = 5;              // DOWN · UP: the readings of the last 5 s averaged (one second's rate is too jumpy to read)
 const NEW_S = 5;               // the height stays lit this long after a new block (its animation takes 3 s)
@@ -128,7 +127,6 @@ export default function create(body, env) {
     { key: "rates", name: "DOWN · UP", go: "traffic" },
     { key: "pool", name: "POOL", go: "mempool" },
     { key: "block", name: "LAST BLOCK", go: "chain" },
-    { key: "computer", name: "COMPUTER", go: "computer" },
   ];
   const side = el("nav", { class: "ss-side", "aria-label": "Vital readings" });
   for (const v of vitals) {
@@ -657,34 +655,12 @@ export default function create(body, env) {
     subline(b, [["bar", "GAPS"], f.isNum(avg) ? [null, `USUALLY ${nb(f.wait(avg).toUpperCase())}`] : null]);
     level(b, lampState("block"));
 
-    // the computer: its processor temperature; without a sensor, how busy it is
-    const c = by.computer;
-    const comp = snap.host?.computer || null;
-    const tc = comp?.cpu_temp_c;
-    const load = comp?.load1;
-    c.btn.hidden = !comp || (!f.isNum(tc) && !f.isNum(load));
-    c.hasTemp = f.isNum(tc);
-    // hot: by the reading against the COMPUTER screen's limits, or the server's CPU HOT alert while it is raised
-    const hotAlert = (Array.isArray(snap.alerts) ? snap.alerts : []).find((a) => a && a.id === "cpu_temp");
-    const tLevel = [!c.hasTemp ? null : tc >= HOT.bad ? "bad" : tc >= HOT.warn ? "warn" : null, hotAlert?.level]
-      .reduce((m, x) => (lit(x) && (!m || RANK[x] > RANK[m]) ? x : m), null);
-    if (c.hasTemp) {
-      setText(c.val, f.temp(tc));
-      // lit: the word comes first (the key already carries ▲ or ■ and the colour)
-      subline(c, [tLevel ? [null, tLevel === "bad" ? "VERY HOT" : "HOT"] : null, ["s1", "PROCESSOR"], f.isNum(load) ? [null, `LOAD ${f.num(load, 2)}`] : null]);
-    } else {
-      setText(c.val, f.isNum(load) ? `LOAD ${f.num(load, 2)}` : "—");
-      subline(c, [tLevel ? [null, tLevel === "bad" ? "VERY HOT" : "HOT"] : null, [null, "NO TEMPERATURE READING"]]);
-    }
-    level(c, tLevel);
     // the traces move with each reading; while this screen is away they wait until it is back
     mergeRow(snap);
     tracesStale = true;
     if (shown) drawTraces();
 
-    const visible = vitals.filter((v) => !v.btn.hidden);
     for (const v of vitals) {
-      v.btn.classList.toggle("is-last", v === visible[visible.length - 1]);
       const s = v.btn.dataset.level || "";
       // the focused one keeps the name it was read out with until its state changes: a name
       // that changed with every reading (the rates, the seconds) would be read out every second
@@ -693,8 +669,7 @@ export default function create(body, env) {
         v.btn.setAttribute("aria-label", label);
         v.said = s;
       }
-      const title = v.key === "block" ? "Bars: the gaps between the last blocks, newest on the right"
-        : v.key === "computer" && !v.hasTemp ? "" : "Lines: the last 15 minutes";
+      const title = v.key === "block" ? "Bars: the gaps between the last blocks, newest on the right" : "Lines: the last 15 minutes";
       if (v.btn.title !== title) v.btn.title = title;
     }
   }
@@ -793,21 +768,19 @@ export default function create(body, env) {
     tracesStale = false;
     const by = Object.fromEntries(vitals.map((v) => [v.key, v]));
     const h = hist || {};
-    const lines = (v, series, { lo = 0, pad = 0 } = {}) => {
+    const lines = (v, series) => {
       const all = series.flatMap(([, vals]) => (vals || []).filter(f.isNum));
       v.trace.replaceChildren();
       if (all.length < 2) return;
-      const top = Math.max(...all), bottom = lo === null ? Math.min(...all) - pad : lo;
-      const hi = Math.max(top + pad, bottom + 1e-9);
+      const hi = Math.max(...all, 1e-9);
       series.forEach(([key, vals], i) => {
-        if (i === 0) v.trace.append(svg("path", { class: `ss-tr-area ${key}`, d: tracePath(vals || [], bottom, hi * 1.08, true) }));
-        v.trace.append(svg("path", { class: `ss-tr-line ${key}`, d: tracePath(vals || [], bottom, hi * 1.08, false) }));
+        if (i === 0) v.trace.append(svg("path", { class: `ss-tr-area ${key}`, d: tracePath(vals || [], 0, hi * 1.08, true) }));
+        v.trace.append(svg("path", { class: `ss-tr-line ${key}`, d: tracePath(vals || [], 0, hi * 1.08, false) }));
       });
     };
     lines(by.peers, [["s1", h.out], ["s2", h.in]]);
     lines(by.rates, [["s1", h.rate_in], ["s2", h.rate_out]]);
     lines(by.pool, [["s1", h.pool]]);
-    lines(by.computer, [["s1", h.cpu_temp_c]], { lo: null, pad: 2 });
     // block gaps as bars (real intervals from the chain list, newest on the right)
     const b = by.block;
     b.trace.replaceChildren();

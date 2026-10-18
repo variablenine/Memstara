@@ -24,13 +24,10 @@ def state_dir() -> Path:
     return Path(base) / APP_DIR_NAME
 
 
-def log_path_refusal(real: str, node_log: str | None = None):
+def log_path_refusal(real: str):
     """Why a log reader won't read `real` (a path with its links resolved): "own" when it is
     inside the dashboard's own settings or state folder, "name" when its file name has no
-    ".log"; None when it may be read. The log file host.discover found for the node
-    (`node_log`) may always be read."""
-    if node_log and real == os.path.realpath(os.path.expanduser(node_log)):
-        return None
+    ".log"; None when it may be read."""
     for folder in (config_dir(), state_dir()):
         f = os.path.realpath(folder)
         try:

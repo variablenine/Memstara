@@ -49,7 +49,7 @@ def main(argv=None) -> int:
     def make_app(key):
         """Runs once the window can open, in the first copy only (a second start just
         shows the first copy's window)."""
-        from .app import App, find_node_on_first_run   # imported late so --help stays instant
+        from .app import App   # imported late so --help stays instant
         from .poller import _hostport
         try:
             settings = Settings(args.config).load()
@@ -65,7 +65,6 @@ def main(argv=None) -> int:
                 "Memstara is running in a terminal, stop it there with Ctrl+C and start the app "
                 "again. If another program uses that port, start the app with another one: "
                 "python3 -m memstara --port 18201" % (port, e.strerror or type(e).__name__)) from None
-        find_node_on_first_run(settings, log=lambda msg: print(msg, flush=True))
         print("Memstara %s: reading %s" % (VERSION, _hostport(settings.get("source.rpc_url"))),
               flush=True)
         if not app.static:

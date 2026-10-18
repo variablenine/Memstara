@@ -118,27 +118,38 @@ class HistoryTest(unittest.TestCase):
             h4.load(now)
             self.assertEqual(len(h4), 0)
 
-    def test_a_file_from_before_the_cpu_fields(self):
-        self.assertEqual(FIELDS[-2:], ("cpu_temp_c", "node_cpu_pct"))
+    def test_a_file_with_the_cpu_fields(self):
+        # a file from a version that also kept this computer's CPU readings: they're left out
+        self.assertEqual(FIELDS, ("out", "in", "tor", "pool", "rate_in", "rate_out", "latency"))
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "history.json"
             now = 1791230700
-            old = ["out", "in", "tor", "pool", "rate_in", "rate_out", "latency"]
-            path.write_text(json.dumps({"fields": old, "rows": [[now - 10, 22, 31, 3, 34, 60000, 140000, 14],
-                                                                [now - 5, 23, 31, 3, 34, 60000, 140000, 14, 9]]}))
+            old = ["out", "in", "tor", "pool", "rate_in", "rate_out", "latency", "cpu_temp_c", "node_cpu_pct"]
+            path.write_text(json.dumps({"v": 1, "fields": old,
+                                        "rows": [[now - 10, 22, 31, 3, 34, 60000, 140000, 14, 61.0, 7.5],
+                                                 [now - 5, 23, 31, 3, 34, 60000, 140000, 14, None, None],
+                                                 [now - 4, 23, 31, 3, 34, 60000, 140000, 14]]}))
             h = History(path)
             h.load(now)
-            self.assertEqual(len(h), 1, "a row of the wrong length is skipped")
-            h.record(now, dict(sample(24), cpu_temp_c=61.0, node_cpu_pct=7.5))
+            self.assertEqual(len(h), 2, "a row of the wrong length is skipped")
+            h.record(now, sample(24))
             q = h.query(900, now, poll_s=5)
-            self.assertEqual([v for v in q["out"] if v is not None], [22, 24])
-            self.assertEqual([v for v in q["cpu_temp_c"] if v is not None], [61.0])
-            # and a file with a field this version doesn't know
-            path.write_text(json.dumps({"fields": ["gone"] + list(FIELDS),
-                                        "rows": [[now - 10, 5] + [1] * len(FIELDS)]}))
+            self.assertEqual([v for v in q["out"] if v is not None], [22, 23, 24])
+            self.assertEqual([v for v in q["latency"] if v is not None], [14, 14, 12])
+            self.assertNotIn("cpu_temp_c", q)
+            self.assertTrue(h.maybe_save(now, force=True))
+            self.assertEqual(json.loads(path.read_text())["fields"], list(FIELDS), "saved without them")
+
+    def test_a_file_from_before_a_field(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "history.json"
+            now = 1791230700
+            path.write_text(json.dumps({"fields": ["out", "in"], "rows": [[now - 10, 22, 31]]}))
             h = History(path)
             h.load(now)
-            self.assertEqual([v for v in h.query(900, now, poll_s=5)["out"] if v is not None], [1])
+            q = h.query(900, now, poll_s=5)
+            self.assertEqual([v for v in q["out"] if v is not None], [22])
+            self.assertEqual([v for v in q["latency"] if v is not None], [], "a field it didn't have: no points")
 
 
 if __name__ == "__main__":

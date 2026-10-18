@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -12,25 +13,25 @@ import unittest.mock
 from pathlib import Path
 
 import helpers
-from helpers import WRITE, StubDiscover, StubHost, found_node, get_json, request
+from helpers import WRITE, get_json, request
 from fake_monerod import POOL_TX, FakeMonerod
 from memstara.app import App
-from memstara.host import HostReader
+from memstara.history import FIELDS
 from memstara.lamps import LAMPS
+from memstara.logevents import NodeLog
 from memstara.pool import FLAG_NOT_RELAYED, FLAG_TIME_GUESSED
-from memstara.poller import BOOTSTRAP_FORWARDED, DISCOVER_EVERY_S, LOG_EVENTS_PER_READ, NODE_KEYS
+from memstara.poller import BOOTSTRAP_FORWARDED, LOG_EVENTS_PER_READ, NODE_KEYS
 from memstara.rpc import READ_ALLOWED
-from memstara.settings import Settings
+from memstara.settings import DEFAULTS, Settings
 
 TOP_KEYS = ["v", "generated", "t", "level", "source", "node", "chain", "peers", "mempool", "traffic", "alerts",
-            "lamps", "host", "events", "hist", "clock_style", "seq"]
+            "lamps", "events", "hist", "clock_style", "seq"]
 # everything the window gets about each waiting transaction (pool.PoolList.part)
 POOL_LIST_KEYS = {"list", "list_wanted", "list_cut", "mined", "check"}
 SOURCE_KEYS = {"mode", "rpc", "answering", "error", "latency_ms", "restricted", "last_ok", "poll_s",
-               "host_name", "dashboard_version", "bootstrap"}
+               "dashboard_version", "bootstrap"}
 LAMP_IDS = ["node", "peers", "sync", "block", "disk", "reorg", "double_spend", "restarts", "spread_out", "spread_in",
             "tor", "flood"]
-HOST_KEYS = {"ok", "error", "every_s", "t", "proc", "proc_error", "computer", "bind_if", "tor"}
 
 
 def log_line(t, level, text, cat="global", loc="src/p2p/net_node.inl:340"):
@@ -38,10 +39,19 @@ def log_line(t, level, text, cat="global", loc="src/p2p/net_node.inl:340"):
                                                  loc, text)
 
 
-class Rig:
-    """A fake node, the dashboard, and stand-ins for this computer's reads."""
+def elsewhere():
+    """The node's RPC address taken as not on this computer (the fake node only listens on
+    127.0.0.1; rpc.on_this_computer itself is tested in test_rpc.py)."""
+    stack = contextlib.ExitStack()
+    for where in ("memstara.poller.on_this_computer", "memstara.nodelog.on_this_computer"):
+        stack.enter_context(unittest.mock.patch(where, return_value=False))
+    return stack
 
-    def __init__(self, restricted=False, found=None, cadence=(5, 10)):
+
+class Rig:
+    """A fake node and the dashboard, with monerod's log in a temp folder."""
+
+    def __init__(self, restricted=False, cadence=5):
         self.tmp = tempfile.TemporaryDirectory()
         base = Path(os.path.realpath(self.tmp.name))
         self.clock = helpers.FakeClock()
@@ -51,15 +61,12 @@ class Rig:
         self.settings = Settings(base / "cfg" / "settings.json", log=lambda m: None).load()
         self.settings.update({"source.rpc_url": self.fake.url, "node.log_path": str(self.log)})
         if cadence:
-            # the node every 5 s and the computer every 10 s: the cadence most tests count in
-            # (OneSecondTest covers the defaults, every second)
-            self.settings.update({"source.refresh_s": cadence[0], "local.every_s": cadence[1]})
-        self.host = StubHost()
-        self.discover = StubDiscover([found_node(self.fake.url, tx_proxy=True, tx_proxy_tor=True)]
-                                     if found is None else found)
+            # the node every 5 s: the cadence most tests count in (OneSecondTest covers the
+            # default, every second)
+            self.settings.update({"source.refresh_s": cadence})
         self.logs = []
         self.app = App(self.settings, port=0, web_dir=base / "web", state_dir=base / "state", clock=self.clock,
-                       log=self.logs.append, host_reader=self.host, discover=self.discover).start(poll=False)
+                       log=self.logs.append).start(poll=False)
         self.port = self.app.port
 
     def poll(self, advance=5):
@@ -110,7 +117,6 @@ class SnapshotTest(unittest.TestCase):
                          ("live", True, None, False))
         self.assertEqual(src["rpc"], "127.0.0.1:%d" % rig.fake.port)
         self.assertEqual(src["dashboard_version"], "0.1.0")
-        self.assertTrue(src["host_name"])
         self.assertEqual(src["poll_s"], 5)
         node = snap["node"]
         self.assertEqual(list(node), NODE_KEYS)
@@ -139,11 +145,9 @@ class SnapshotTest(unittest.TestCase):
         # (real time, against the test's made-up clock) can move them a hair
         self.assertAlmostEqual(snap["traffic"]["rate_in"], 60000, delta=600)
         self.assertAlmostEqual(snap["traffic"]["rate_out"], 140000, delta=1400)
-        self.assertEqual(set(snap["host"]), HOST_KEYS)
-        self.assertEqual(snap["host"]["computer"]["cpu_temp_c"], 61.0)
-        self.assertEqual(snap["host"]["every_s"], 10)
+        self.assertNotIn("host", snap, "nothing about this computer")
         for peer in snap["peers"]["list"]:
-            self.assertEqual(peer["rtt_ms"], None if peer["kind"] in ("tor", "i2p") else 42.0, peer)
+            self.assertFalse({"rtt_ms", "retrans"} & set(peer), "no round trips: RPC doesn't give them")
         self.assertEqual(snap["alerts"], [])
         bans = rig.fake.results["get_bans"]["bans"]
         self.assertEqual(node["bans"], len(bans))
@@ -169,13 +173,13 @@ class SnapshotTest(unittest.TestCase):
         self.assertTrue(set(rig.fake.calls) <= set(READ_ALLOWED) | plain, "only read-only calls reach the node")
         st, hist = get_json(rig.port, "/api/history?window=900")
         self.assertEqual(hist["out"][-1], 22)
-        self.assertEqual((hist["cpu_temp_c"][-1], hist["node_cpu_pct"][-1]), (61.0, 7.5))
-        self.assertEqual(len(hist["cpu_temp_c"]), len(hist["t"]))
+        self.assertEqual(set(hist), {"window", "step", "t"} | set(FIELDS))
+        self.assertEqual(len(hist["latency"]), len(hist["t"]))
         # the row still filling comes with each snapshot, the same as the history's newest point
         row = snap["hist"]
         self.assertEqual((row["t"], row["step"]), (hist["t"][-1], hist["step"]))
-        self.assertEqual({k: row[k] for k in ("out", "pool", "rate_in", "cpu_temp_c")},
-                         {k: hist[k][-1] for k in ("out", "pool", "rate_in", "cpu_temp_c")})
+        self.assertEqual({k: row[k] for k in ("out", "pool", "rate_in", "latency")},
+                         {k: hist[k][-1] for k in ("out", "pool", "rate_in", "latency")})
 
     def test_alerts_follow_the_node(self):
         rig = self.rig
@@ -379,45 +383,15 @@ class BootstrapTest(unittest.TestCase):
             rig.close()
 
 
-class LocalReadsTest(unittest.TestCase):
-    """host.py, logevents.py and host.discover wired into the poller (with stand-ins)."""
+class LogTest(unittest.TestCase):
+    """monerod's log (logevents.py) wired into the poller, and a node whose RPC address isn't
+    on this computer."""
 
     def setUp(self):
         self.rig = Rig()
 
     def tearDown(self):
         self.rig.close()
-
-    def test_read_every_local_every_s(self):
-        rig = self.rig
-        rig.poll(0)
-        for _ in range(5):
-            rig.poll(5)
-        self.assertEqual(len(rig.host.reads), 3, "every 10 s with a poll every 5 s")
-        self.assertEqual(rig.host.reads[0][1:], (rig.fake.url, "~/.bitmonero", 10))
-        self.assertEqual(rig.host.reads[-1][2], "/home/u/.bitmonero", "the node's own data dir once it's found")
-        rig.settings.update({"local.every_s": 30})
-        n = len(rig.host.reads)
-        for _ in range(6):
-            rig.poll(5)
-        self.assertEqual(len(rig.host.reads), n + 1)
-        self.assertEqual(rig.poll(30)["host"]["every_s"], 30)
-
-    def test_off(self):
-        rig = self.rig
-        rig.settings.update({"local.enabled": False})
-        rig.write_log(log_line(rig.clock(), "ERROR", "not read"))
-        snap = rig.poll(0)
-        snap = rig.poll(30)
-        self.assertIsNone(snap["host"])
-        self.assertEqual(rig.host.reads, [])
-        self.assertEqual(rig.discover.calls, 0, "finding the node is a local read too")
-        self.assertTrue(all(p["rtt_ms"] is None and p["retrans"] is None for p in snap["peers"]["list"]))
-        st, hist = get_json(rig.port, "/api/history?window=900")
-        self.assertIsNone(hist["cpu_temp_c"][-1])
-        self.assertNotIn("log", [e["kind"] for e in snap["events"]])
-        rig.settings.update({"local.enabled": True})
-        self.assertEqual(rig.poll()["host"]["computer"]["cores"], 8)
 
     def test_log_events(self):
         rig = self.rig
@@ -440,67 +414,96 @@ class LocalReadsTest(unittest.TestCase):
         snap = rig.poll(10)
         self.assertEqual(len([e for e in snap["events"] if e["kind"] == "log"]), 2, "the same warning: once per 10 min")
 
-    def test_a_node_on_another_computer(self):
+    def test_an_rpc_address_not_on_this_computer(self):
         rig = self.rig
-        rig.host.reading = dict(HostReader.empty("Your node runs on another computer (node.lan:18081)."),
-                                remote={"how": "network", "where": "node.lan:18081", "via": None})
-        rig.write_log(log_line(rig.clock(), "ERROR", "old"))
-        snap = rig.poll(0)
-        self.assertFalse(snap["host"]["ok"])
-        self.assertEqual(snap["host"]["remote"]["where"], "node.lan:18081")
-        self.assertEqual(rig.discover.calls, 0, "no process here to find")
-        self.assertTrue(rig.app.poller.node_elsewhere())
-        notes = [e for e in snap["events"] if e["kind"] == "source" and "Reading" not in e["text"]]
-        self.assertEqual([e["level"] for e in notes], ["warn", "warn", "info"], "newest first")
-        self.assertIn("with no login", notes[0]["text"])
-        self.assertIn("plain http", notes[1]["text"])
-        self.assertIn("another computer (node.lan:18081)", notes[2]["text"])
+        with elsewhere():
+            rig.write_log(log_line(rig.clock(), "ERROR", "old"))
+            snap = rig.poll(0)
+            notes = [e for e in snap["events"] if e["kind"] == "source" and "Reading" not in e["text"]]
+            self.assertEqual([e["level"] for e in notes], ["warn", "warn", "info"], "newest first")
+            self.assertIn("with no login", notes[0]["text"])
+            self.assertIn("plain http", notes[1]["text"])
+            self.assertIn("The RPC address 127.0.0.1:%d isn't on this computer" % rig.fake.port, notes[2]["text"])
+            snap = rig.poll(10)
+            self.assertEqual(len([e for e in snap["events"] if e["kind"] == "source"]), 4, "said once")
+            # its log: read from a path set by hand (this rig sets one)
+            t = int(rig.clock())
+            rig.write_log(log_line(t, "WARNING", "Peer 9 dropped 3 times", cat="net.p2p"))
+            snap = rig.poll(10)
+            self.assertEqual([e["text"] for e in snap["events"] if e["kind"] == "log"], ["Peer 9 dropped 3 times"])
+            st, out = get_json(rig.port, "/api/node-log", headers={"X-Memstara": "1"})
+            self.assertEqual(st, 200)
         snap = rig.poll(10)
-        self.assertEqual(len([e for e in snap["events"] if e["kind"] == "source"]), 4, "said once")
-        # its log: read only from a path set by hand (this rig sets one)
-        t = int(rig.clock())
-        rig.write_log(log_line(t, "WARNING", "Peer 9 dropped 3 times", cat="net.p2p"))
-        snap = rig.poll(10)
-        self.assertEqual([e["text"] for e in snap["events"] if e["kind"] == "log"], ["Peer 9 dropped 3 times"])
-        guard = {"X-Memstara": "1"}
-        st, out = get_json(rig.port, "/api/node-log", headers=guard)
-        self.assertEqual(st, 200)
-        rig.settings.update({"node.log_path": "~/.bitmonero/bitmonero.log"})
-        st, out = get_json(rig.port, "/api/node-log", headers=guard)
-        self.assertEqual(st, 404)
-        self.assertIn("another computer", out["error"])
-        # through an SSH tunnel: said again, without the network warnings
-        rig.host.reading["remote"] = {"how": "tunnel", "where": "127.0.0.1:18081", "via": "ssh"}
-        snap = rig.poll(10)
-        self.assertIn("through ssh on 127.0.0.1:18081", snap["events"][0]["text"])
-        self.assertEqual(snap["events"][0]["level"], "info")
-        # back on this computer
-        rig.host.reading = helpers.HOST_READING
-        snap = rig.poll(10)
-        self.assertTrue(snap["host"]["ok"])
-        self.assertFalse(rig.app.poller.node_elsewhere())
-        self.assertEqual(rig.discover.calls, 1)
+        self.assertEqual(len([e for e in snap["events"] if e["kind"] == "source"]), 4, "not said again")
 
-    def test_a_log_without_log_in_its_name_only_when_the_node_was_found_with_it(self):
+    def test_the_no_login_note_waits_for_the_node_to_answer(self):
+        rig = self.rig
+
+        def nologin(snap):
+            return [e for e in snap["events"] if "with no login" in e["text"]]
+        with elsewhere():
+            rig.fake.refuse()
+            snap = rig.poll(0)
+            self.assertFalse(snap["source"]["answering"])
+            self.assertEqual(nologin(snap), [])
+            rig.fake.resume()
+            snap = rig.poll(10)
+            self.assertTrue(snap["source"]["answering"])
+            self.assertEqual(len(nologin(snap)), 1)
+            snap = rig.poll(10)
+            self.assertEqual(len(nologin(snap)), 1, "said once")
+
+    def test_the_default_log_isnt_read_while_the_rpc_address_isnt_on_this_computer(self):
+        rig = self.rig
+        home = rig.log.parent / "home"
+        default = home / ".bitmonero" / "bitmonero.log"
+        default.parent.mkdir(parents=True)
+        default.write_text("")
+        guard = {"X-Memstara": "1"}
+
+        def logs(snap):
+            return [e["text"] for e in snap["events"] if e["kind"] == "log"]
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(home)}), elsewhere():
+            rig.settings.update({"node.log_path": DEFAULTS["node.log_path"]})
+            rig.poll(0)
+            with open(default, "a") as fh:
+                fh.write(log_line(rig.clock(), "ERROR", "maybe another node's"))
+            snap = rig.poll(5)
+            self.assertEqual(logs(snap), [], "the log at the default place may be another node's")
+            st, out = get_json(rig.port, "/api/node-log", headers=guard)
+            self.assertEqual((st, out), (404, {"ok": False, "error": "The node's RPC address isn't on this computer, "
+                                               "so the log at the default place may be another node's. To read the "
+                                               "node's own, set monerod's log in Settings."}))
+            # the same file set by hand: read
+            rig.settings.update({"node.log_path": str(default)})
+            rig.poll(5)
+            with open(default, "a") as fh:
+                fh.write(log_line(rig.clock(), "ERROR", "the node's own"))
+            snap = rig.poll(5)
+            self.assertEqual(logs(snap), ["the node's own"])
+            st, out = get_json(rig.port, "/api/node-log", headers=guard)
+            self.assertEqual(st, 200)
+            self.assertTrue(out["lines"][-1].endswith("the node's own"))
+            rig.settings.update({"node.log_path": DEFAULTS["node.log_path"]})
+        # an RPC address on this computer: the default place is read
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(home)}):
+            rig.poll(5)
+            with open(default, "a") as fh:
+                fh.write(log_line(rig.clock(), "ERROR", "on this computer"))
+            snap = rig.poll(5)
+            self.assertEqual(logs(snap)[0], "on this computer")
+            self.assertEqual(get_json(rig.port, "/api/node-log", headers=guard)[0], 200)
+
+    def test_a_log_without_log_in_its_name_isnt_read(self):
         rig = self.rig
         odd = rig.log.parent / "monerod-output"            # --log-file monerod-output
         odd.write_text("")
         rig.settings.update({"node.log_path": str(odd)})
-        guard = {"X-Memstara": "1"}
         rig.poll(0)
-        st, out = get_json(rig.port, "/api/node-log", headers=guard)
+        st, out = get_json(rig.port, "/api/node-log", headers={"X-Memstara": "1"})
         self.assertEqual(st, 403)
         self.assertIn("its name has no .log", out["error"])
         self.assertIn("its name has no .log", rig.app.poller.node_log.error)
-        rig.discover.found = [found_node(rig.fake.url, log_file=str(odd))]
-        rig.poll(DISCOVER_EVERY_S)
-        with open(odd, "a") as fh:
-            fh.write(log_line(rig.clock(), "ERROR", "from the node's own log"))
-        snap = rig.poll(10)
-        self.assertIn("from the node's own log", [e["text"] for e in snap["events"] if e["kind"] == "log"])
-        st, out = get_json(rig.port, "/api/node-log", headers=guard)
-        self.assertEqual(st, 200)
-        self.assertTrue(out["lines"][-1].endswith("from the node's own log"))
 
     def test_a_flood_of_log_lines_is_counted(self):
         rig = self.rig
@@ -513,86 +516,49 @@ class LocalReadsTest(unittest.TestCase):
                                           "whole log)")
         self.assertEqual(logs[1]["text"], "boom %d" % (LOG_EVENTS_PER_READ + 6))
 
-    def test_discovery_is_cached(self):
-        rig = self.rig
-        rig.poll(0)
-        for _ in range(5):
-            rig.poll(10)
-        self.assertEqual(rig.discover.calls, 1, "at most once a minute")
-        rig.poll(DISCOVER_EVERY_S)
-        self.assertEqual(rig.discover.calls, 2)
-        rig.host.reading["proc"]["pid"] = 5555          # the node restarted
-        rig.poll(10)
-        self.assertEqual(rig.discover.calls, 3, "and again when the node's pid changes")
-        rig.poll(10)
-        self.assertEqual(rig.discover.calls, 3)
-        # GET /api/discover always looks afresh (guarded like a change)
-        st, _ = get_json(rig.port, "/api/discover")
-        self.assertEqual(st, 403)
-        st, out = get_json(rig.port, "/api/discover", headers={"X-Memstara": "1",
-                                                                 "Origin": "http://127.0.0.1:%d" % rig.port})
-        self.assertEqual((st, out["ok"], out["found"][0]["rpc_url"]), (200, True, rig.fake.url))
-        self.assertEqual(rig.discover.calls, 4)
-        st, _ = get_json(rig.port, "/api/discover", headers={"X-Memstara": "1", "Origin": "http://evil.example"})
-        self.assertEqual(st, 403)
 
-    def test_tor_auto_from_the_nodes_flags(self):
-        rig = Rig(found=[])
-        try:
-            rig.fake.results["get_connections"]["connections"] = [
-                c for c in rig.fake.results["get_connections"]["connections"] if not c["address"].endswith(".onion")
-                and c.get("address_type") != 4]
-            snap = rig.poll(0)
-            self.assertIsNone(snap["node"]["tor_out"], "auto: no Tor peers and the node wasn't found")
-            self.assertEqual(lamps_by_id(snap)["tor"]["value"], "OFF")
-            rig.discover.found = [found_node(rig.fake.url, tx_proxy=True, tx_proxy_tor=True)]
-            snap = rig.poll(DISCOVER_EVERY_S)
-            self.assertEqual(snap["node"]["tor_out"], 0, "--tx-proxy: Tor sending is on")
-            snap = rig.poll(10 * 60)
-            self.assertEqual(alerts_by_id(snap)["tor"]["level"], "warn")
-        finally:
-            rig.close()
-
-    def test_tor_auto_from_tor_peers_until_the_node_restarts(self):
-        rig = Rig(found=[])
+class TorSendingTest(unittest.TestCase):
+    def test_auto_from_tor_peers_until_the_node_restarts(self):
+        rig = Rig()
         try:
             conns = rig.fake.results["get_connections"]["connections"]
+            no_tor = [c for c in conns if not c["address"].endswith(".onion") and c.get("address_type") != 4]
+            rig.fake.results["get_connections"]["connections"] = no_tor
             snap = rig.poll(0)
-            self.assertEqual(snap["node"]["tor_out"], 3, "auto: Tor peers seen and the node wasn't found")
-            rig.fake.results["get_connections"]["connections"] = [
-                c for c in conns if not c["address"].endswith(".onion") and c.get("address_type") != 4]
+            self.assertIsNone(snap["node"]["tor_out"], "auto: no Tor peers seen yet")
+            self.assertEqual(lamps_by_id(snap)["tor"]["value"], "OFF")
+            rig.fake.results["get_connections"]["connections"] = conns
+            snap = rig.poll(5)
+            self.assertEqual(snap["node"]["tor_out"], 3, "auto: Tor peers seen")
+            rig.fake.results["get_connections"]["connections"] = no_tor
             snap = rig.poll(5)
             self.assertEqual(snap["node"]["tor_out"], 0, "still on: Tor peers were seen since it started")
+            snap = rig.poll(10 * 60)
+            self.assertEqual(alerts_by_id(snap)["tor"]["level"], "warn")
             rig.fake.info["start_time"] = int(rig.clock()) + 1
             snap = rig.poll(5)
             self.assertIsNone(snap["node"]["tor_out"], "restarted: the Tor peers from before don't count")
-            rig.fake.results["get_connections"]["connections"] = conns
-            rig.discover.found = [found_node(rig.fake.url)]
-            snap = rig.poll(DISCOVER_EVERY_S)
-            self.assertIsNone(snap["node"]["tor_out"], "found without --tx-proxy tor,...: its flags decide")
+            self.assertNotIn("tor", alerts_by_id(snap))
         finally:
             rig.close()
 
 
 class OutWantedTest(unittest.TestCase):
-    def test_from_the_setting_the_node_or_monerods_default(self):
-        rig = Rig(found=[])
+    def test_from_the_setting_or_monerods_default(self):
+        rig = Rig()
         try:
             snap = rig.poll(0)
             self.assertEqual((snap["node"]["out_wanted"], snap["node"]["out_wanted_from"]), (12, "default"))
-            rig.discover.found = [found_node(rig.fake.url, out_peers=32)]
-            snap = rig.poll(DISCOVER_EVERY_S)
-            self.assertEqual((snap["node"]["out_wanted"], snap["node"]["out_wanted_from"]), (32, "node"))
-            self.assertEqual(lamps_by_id(snap)["peers"]["value"], "%d OF 32" % snap["node"]["out_peers"])
             rig.settings.update({"thresholds.out_wanted": 40})
             snap = rig.poll(5)
             self.assertEqual((snap["node"]["out_wanted"], snap["node"]["out_wanted_from"]), (40, "setting"))
+            self.assertEqual(lamps_by_id(snap)["peers"]["value"], "%d OF 40" % snap["node"]["out_peers"])
         finally:
             rig.close()
 
 
 class OneSecondTest(unittest.TestCase):
-    """The defaults: the node and this computer read every second, and each new snapshot
+    """The defaults: the node and monerod's log read every second, and each new snapshot
     sent to the window the moment it's in."""
 
     def setUp(self):
@@ -603,15 +569,13 @@ class OneSecondTest(unittest.TestCase):
 
     def test_reads_every_second(self):
         rig = self.rig
-        for _ in range(10):
+        rig.poll(1)
+        for i in range(9):
+            rig.write_log(log_line(rig.clock(), "ERROR", "line %d" % i))
             snap = rig.poll(1)
-        self.assertEqual((snap["source"]["poll_s"], snap["host"]["every_s"]), (1, 1))
-        self.assertEqual(len(rig.host.reads), 10, "this computer every second too")
-        # its counters timed by when each is read: the poll's time moved on by a clock
-        # that never jumps
-        now = rig.host.reads[-1][0]
-        self.assertTrue(now <= rig.host.clock() < now + 5)
-        self.assertEqual(snap["host"]["t"], now)
+            self.assertEqual([e["text"] for e in snap["events"] if e["kind"] == "log"][0], "line %d" % i,
+                             "monerod's log every poll too")
+        self.assertEqual(snap["source"]["poll_s"], 1)
         self.assertEqual(snap["seq"], 10, "each snapshot numbered")
         self.assertLessEqual(len(rig.app.poller.history), 3, "history keeps one row per 5 s")
         st, hist = get_json(rig.port, "/api/history?window=900")
@@ -802,8 +766,7 @@ class ThreadTest(unittest.TestCase):
         base = Path(tmp.name)
         s = Settings(base / "settings.json", log=lambda m: None).load()
         s.update({"source.rpc_url": fake.url, "source.refresh_s": 2})
-        app = App(s, port=0, web_dir=base / "web", state_dir=base / "state", log=lambda m: None,
-                  host_reader=StubHost(), discover=StubDiscover()).start()
+        app = App(s, port=0, web_dir=base / "web", state_dir=base / "state", log=lambda m: None).start()
         try:
             deadline = time.time() + 10
             snap = None
@@ -830,12 +793,12 @@ class ThreadTest(unittest.TestCase):
         # slow read mustn't hold that up, nor the history saved on the way out
         stuck, inside, release = threading.Event(), threading.Event(), threading.Event()
 
-        class SlowHost(StubHost):
-            def annotate(self, peers):
+        class SlowLog(NodeLog):
+            def poll(self, now):
                 if stuck.is_set():
                     inside.set()
                     release.wait(30)
-                return super().annotate(peers)
+                return super().poll(now)
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -846,7 +809,7 @@ class ThreadTest(unittest.TestCase):
         s = Settings(base / "settings.json", log=lambda m: None).load()
         s.update({"source.rpc_url": fake.url, "source.refresh_s": 2})
         app = App(s, port=0, web_dir=base / "web", state_dir=base / "state", log=lambda m: None,
-                  host_reader=SlowHost(), discover=StubDiscover()).start()
+                  node_log=SlowLog(str(base / "bitmonero.log"))).start()
         deadline = time.time() + 10
         while time.time() < deadline and not get_json(app.port, "/api/snapshot")[1]["source"]["answering"]:
             time.sleep(0.1)

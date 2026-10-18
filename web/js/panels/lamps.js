@@ -10,7 +10,7 @@ let lamps = [];
 let nodes = new Map();
 let settingsRef = {};
 let wanted = { n: null, from: null };   // the outgoing count the node aims for (snapshot)
-const WANTED_FROM = { setting: "your setting", node: "the node's --out-peers", default: "monerod's default" };
+const WANTED_FROM = { setting: "your setting", default: "monerod's default" };
 
 // What each lamp watches, in the current limits' words.
 export function describe(id) {

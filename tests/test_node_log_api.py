@@ -47,28 +47,31 @@ class TailTest(unittest.TestCase):
         self.env.stop()
         self.tmp.cleanup()
 
-    def read(self, source="monerod", lines=None, path="~/.bitmonero/bitmonero.log", node_log=None, remote=False,
-             **values):
-        return nodelog.read(StubSettings(**dict({"node.log_path": path}, **values)), source, lines, node_log, remote)
+    def read(self, source="monerod", lines=None, path="~/.bitmonero/bitmonero.log", rpc_url="http://127.0.0.1:18081"):
+        return nodelog.read(StubSettings(**{"node.log_path": path, "source.rpc_url": rpc_url}), source, lines)
 
-    def test_a_node_on_another_computer(self):
+    def test_an_rpc_address_not_on_this_computer(self):
         self.log.write_text(log_line(1) + "\n")
-        st, out = self.read(remote=True)
-        self.assertEqual(st, 404, "the default path is this computer's, not the node's")
-        self.assertIn("another computer", out["error"])
+        for url in ("http://192.0.2.10:18081", "http://node.lan:18081", "https://[2001:db8::5]:18089"):
+            st, out = self.read(rpc_url=url)
+            self.assertEqual((st, out), (404, {"ok": False, "error": "The node's RPC address isn't on this computer, "
+                                               "so the log at the default place may be another node's. To read the "
+                                               "node's own, set monerod's log in Settings."}), url)
+        self.assertEqual(self.read(path="", rpc_url="http://192.0.2.10:18081")[0], 404, "left empty: the default")
+        st, out = self.read(path=str(self.log), rpc_url="http://192.0.2.10:18081")
+        self.assertEqual((st, out["lines"]), (200, [log_line(1)]), "the same file set by hand")
         copy = self.outside / "node-copy.log"
         copy.write_text(log_line(2) + "\n")
-        st, out = self.read(path=str(copy), remote=True)
+        st, out = self.read(path=str(copy), rpc_url="http://192.0.2.10:18081")
         self.assertEqual((st, out["path"]), (200, str(copy)), "a copy or mounted folder set by hand")
+        for url in ("http://127.0.0.1:18081", "http://127.0.0.2:18081", "http://[::1]:18081", "http://localhost:18081"):
+            st, out = self.read(rpc_url=url)
+            self.assertEqual((st, out["path"]), (200, str(self.log)), url)
 
-    def test_a_log_path_left_at_its_default_follows_the_node(self):
-        other = self.outside / "monerod.log"
-        other.write_text(log_line(1) + "\n")
-        st, out = self.read(node_log=str(other))
-        self.assertEqual((st, out["path"]), (200, str(other)), "default setting: the node's own --log-file")
-        self.log.write_text(log_line(2) + "\n")
-        st, out = self.read(path=str(self.log), node_log=str(other))
-        self.assertEqual((st, out["path"]), (200, str(self.log)), "a path the user typed wins")
+    def test_an_empty_path_reads_the_default(self):
+        self.log.write_text(log_line(1) + "\n")
+        st, out = self.read(path="")
+        self.assertEqual((st, out["path"]), (200, str(self.log)))
 
     def test_last_lines(self):
         self.log.write_text("".join(log_line(i) + "\n" for i in range(300)))
@@ -195,10 +198,6 @@ class TailTest(unittest.TestCase):
             st, out = self.read(path=str(folder / "old.log"))
             self.assertEqual((st, out["error"]), (403, "%s is in the dashboard's own settings or state folder, so "
                                                        "it isn't read." % (folder / "old.log")))
-        # the log file the node was found writing (--log-file) is always read, whatever its name
-        st, out = self.read(path="~/notes.txt", node_log=str(notes))
-        self.assertEqual((st, out["lines"]), (200, ["not a log"]))
-        self.assertEqual(self.read(path="~/notes.txt", node_log=str(self.log))[0], 403)
 
     def test_bad_requests(self):
         self.log.write_text("x\n")
@@ -225,8 +224,7 @@ class HttpTest(unittest.TestCase):
         cls.env.start()
         settings = Settings(base / "cfg" / "settings.json", log=lambda m: None).load()
         settings.update({"source.rpc_url": "http://127.0.0.1:%d" % helpers.closed_port()})
-        cls.app = App(settings, port=0, web_dir=base / "web", state_dir=base / "state", log=lambda m: None,
-                      host_reader=helpers.StubHost(), discover=helpers.StubDiscover())
+        cls.app = App(settings, port=0, web_dir=base / "web", state_dir=base / "state", log=lambda m: None)
         cls.app.start(poll=False)
         cls.port = cls.app.port
 

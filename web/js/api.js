@@ -38,7 +38,6 @@ export const api = {
   // monerod's read-only console commands
   commands: () => request("GET", "/api/commands"),
   command: (name, args = {}) => request("POST", "/api/command", { name, args }),
-  discover: () => request("GET", "/api/discover", undefined, true),
   nodeLog: (source, lines) => request("GET", `/api/node-log?source=${encodeURIComponent(source)}&lines=${encodeURIComponent(lines)}`, undefined, true),
   // privacy mode: on at once; off only with the word typed in the confirm step (SHOW)
   privacy: (on, confirm) => request("POST", "/api/privacy", confirm ? { on, confirm } : { on }),

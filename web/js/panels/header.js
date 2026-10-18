@@ -20,7 +20,6 @@ export function renderHeader(snap) {
   const node = snap.node || {};
   const parts = [];
   if (node.nettype) parts.push(String(node.nettype).toUpperCase());
-  if (src.host_name) parts.push("HOST " + String(src.host_name).toUpperCase());
   if (f.isNum(node.uptime_s)) parts.push("NODE UP " + f.dur(node.uptime_s));
   if (node.version) parts.push("MONEROD " + String(node.version).replace(/-release$/, ""));
   // a part never breaks inside itself ("NODE UP 3 d 06 h"), only between parts
@@ -48,7 +47,7 @@ export function renderHeader(snap) {
   lastRpc = src.rpc || lastRpc;
   if (lost) setMode("lost", "NOT ANSWERING", src.rpc || "—", "", "Your node isn't answering, so nothing here is live");
   else setMode("live", "LIVE", src.rpc || "—", src.restricted ? "LIMITED" : "",
-    src.restricted ? "A restricted RPC port: peers, bans and disk space are hidden" : "Reading your node");
+    src.restricted ? "A restricted RPC port: peers, bans, traffic and disk space are hidden" : "Reading your node");
 
   // status bar: its words are written in place, so the address can be selected and copied
   const bits = [
@@ -72,7 +71,6 @@ export function renderHeader(snap) {
     node.version ? `MONEROD ${node.version}` : null,
     f.isNum(node.hf_version) ? `RULES v${node.hf_version}` : null,
     node.rpc_version ? `RPC v${node.rpc_version}` : null,
-    src.host_name ? `HOST ${src.host_name}` : null,
   ].filter(Boolean);
   setText($("sb-plate"), plate.join(" · "));
 
@@ -86,7 +84,7 @@ export function renderHeader(snap) {
   } else if (src.restricted) {
     banner.hidden = false;
     setData(banner, "level", "warn");
-    setText(banner, "▲ THIS IS A RESTRICTED RPC PORT, SO PEERS, BANS AND DISK SPACE ARE HIDDEN. SETTINGS → DATA SOURCE → FIND MY NODE SHOWS YOUR NODE'S UNRESTRICTED PORT.");
+    setText(banner, "▲ THIS IS A RESTRICTED RPC PORT, SO PEERS, BANS, TRAFFIC AND DISK SPACE ARE HIDDEN. TO SEE THEM, PUT YOUR NODE'S UNRESTRICTED PORT IN SETTINGS → DATA SOURCE.");
   } else {
     banner.hidden = true;
   }

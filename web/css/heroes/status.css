@@ -119,7 +119,7 @@
   background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); font: inherit;
   transition: background .2s;
 }
-.ss-vital.is-last { border-bottom: 0; }
+.ss-vital:last-child { border-bottom: 0; }
 .ss-vital::before {   /* a lit bar on the left edge on hover and focus */
   content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; background: var(--accent);
   box-shadow: 0 0 8px rgba(var(--accent-rgb), .8); opacity: 0; transform: scaleY(.4); transition: opacity .2s, transform .25s;
@@ -178,8 +178,7 @@
   .ss-side { border-left: 0; border-top: 1px solid var(--line); grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; }
   .ss-vital { border-right: 1px solid var(--line); padding: 10px 12px; min-height: 0; align-content: start; }
   .ss-vital:nth-of-type(2n) { border-right: 0; }
-  .ss-vital.is-last:nth-of-type(odd) { grid-column: 1 / -1; border-right: 0; }
-  .ss-vital.is-last { border-bottom: 0; }
+  .ss-vital:nth-last-of-type(-n + 2) { border-bottom: 0; }   /* the bottom row: the last two */
   .ss-v-v { font-size: var(--fs-2); }
   .ss-v-v, .ss-v-s { white-space: normal; overflow: visible; overflow-wrap: anywhere; line-height: 1.35; }
 }

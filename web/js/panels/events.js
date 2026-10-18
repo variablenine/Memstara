@@ -1,4 +1,4 @@
-// J · Log: what happened, newest first (kept in the dashboard's memory).
+// I · Log: what happened, newest first (kept in the dashboard's memory).
 // Lines from monerod's own log file carry a MONEROD LOG tag.
 import { $, el, clear, setText } from "../dom.js";
 import * as f from "../fmt.js";

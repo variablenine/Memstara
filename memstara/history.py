@@ -17,8 +17,7 @@ from pathlib import Path
 
 from .util import atomic_write
 
-# cpu_temp_c and node_cpu_pct come from the local reads (host.py); null when they're off
-FIELDS = ("out", "in", "tor", "pool", "rate_in", "rate_out", "latency", "cpu_temp_c", "node_cpu_pct")
+FIELDS = ("out", "in", "tor", "pool", "rate_in", "rate_out", "latency")
 WINDOWS = (900, 3600, 21600, 86400)
 KEEP_S = 86400
 MAX_POINTS = 360

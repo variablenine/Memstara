@@ -4,8 +4,8 @@
 Safety rules (see docs/DESIGN.md): Host check (421), the window key (the app makes a
 fresh one at every start and only its own window has it: the page and every /api/ call
 need it, else 403, so no browser or other program can use the dashboard), write guard for
-PUT/POST and for GET /api/node-log and /api/discover (X-Memstara: 1 and a matching Origin,
-else 403), 64 KB body limit (413), static files only from a list built at start-up (by
+PUT/POST and for GET /api/node-log (X-Memstara: 1 and a matching Origin, else 403), 64 KB
+body limit (413), static files only from a list built at start-up (by
 walking web/), security headers on every answer,
 no CORS headers ever, and no stack traces or logins in answers.
 """
@@ -23,8 +23,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import VERSION, nodelog
 from .history import WINDOWS
-from .host import same_rpc
 from .privacy import REVEAL_WORD, has_token, utc_stamps
+from .rpc import same_rpc
 from .settings import SettingsError, validate_value
 
 CSP = ("default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
@@ -189,7 +189,7 @@ class Handler(BaseHTTPRequestHandler):
         if not safe and getattr(self, "_is_api", False) and self._private():
             if isinstance(obj, (bytes, bytearray)):
                 obj = json.loads(obj)
-            self.app.privacy.learn(self.app.poller.snapshot())   # this node's ports, before any answer
+            self.app.privacy.learn(self.app.poller.snapshot())   # the node's host name, before any answer
             obj = self.app.privacy.redact(obj)
         body = obj if isinstance(obj, (bytes, bytearray)) else json.dumps(obj, separators=(",", ":")).encode()
         self._raw(code, body, "application/json", extra_headers)
@@ -333,12 +333,11 @@ class Handler(BaseHTTPRequestHandler):
         "/api/commands": ("GET",),
         "/api/command": ("POST",),
         "/api/node-log": ("GET",),
-        "/api/discover": ("GET",),
         "/api/health": ("GET",),
         "/api/privacy": ("POST",),
     }
-    # these read files and processes on this computer: same guard as a change
-    GUARDED_GETS = ("/api/node-log", "/api/discover")
+    # this one reads a file on this computer: same guard as a change
+    GUARDED_GETS = ("/api/node-log",)
 
     def _handle(self, method):
         try:
@@ -477,16 +476,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, app.test_connection(nv, uv, pw))
         if path == "/api/commands":
             return self._json(200, app.commands.listing(), safe=True)   # fixed text: the commands and their help
-        if path == "/api/discover":
-            return self._json(200, app.poller.discover())
         if path == "/api/command":
             status, out = app.commands.run(body)
             return self._json(status, out)
         if path == "/api/node-log":
             q = parse_qs(query or "")
             status, out = nodelog.read(app.settings, (q.get("source") or ["monerod"])[0],
-                                       (q.get("lines") or [None])[0], app.poller.node_log_file(),
-                                       app.poller.node_elsewhere())
+                                       (q.get("lines") or [None])[0])
             if self._private() and isinstance(out, dict) and isinstance(out.get("lines"), list):
                 # privacy mode shows UTC: local times in the log too
                 out = dict(out, lines=[utc_stamps(x) if isinstance(x, str) else x for x in out["lines"]])

@@ -1,6 +1,6 @@
 // Alerts strip: every active alert, problems first. Empty = "NONE RAISED".
 // Each alert keeps its own row while it is up, and only the words that changed are
-// written (a temperature, the "FOR n min"), so an address selected in a row stays
+// written (a reading, the "FOR n min"), so an address selected in a row stays
 // selected long enough to copy it.
 import { $, el, setText, setData } from "../dom.js";
 import * as f from "../fmt.js";

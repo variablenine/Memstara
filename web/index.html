@@ -17,7 +17,6 @@
   <link rel="stylesheet" href="css/heroes/chain.css">
   <link rel="stylesheet" href="css/heroes/mempool.css">
   <link rel="stylesheet" href="css/heroes/traffic.css">
-  <link rel="stylesheet" href="css/heroes/computer.css">
   <link rel="stylesheet" href="css/heroes/bans.css">
   <link rel="stylesheet" href="css/heroes/log.css">
   <link rel="stylesheet" href="css/privacy.css">
@@ -84,14 +83,13 @@
     <button class="tab" type="button" role="tab" id="tab-chain" aria-controls="screen-chain" aria-selected="false" tabindex="-1" data-tab="chain"><span class="tab-n" aria-hidden="true">03</span><span class="tab-label">CHAIN</span><span class="tab-flag" aria-hidden="true"></span></button>
     <button class="tab" type="button" role="tab" id="tab-mempool" aria-controls="screen-mempool" aria-selected="false" tabindex="-1" data-tab="mempool"><span class="tab-n" aria-hidden="true">04</span><span class="tab-label">MEMPOOL</span><span class="tab-flag" aria-hidden="true"></span></button>
     <button class="tab" type="button" role="tab" id="tab-traffic" aria-controls="screen-traffic" aria-selected="false" tabindex="-1" data-tab="traffic"><span class="tab-n" aria-hidden="true">05</span><span class="tab-label">TRAFFIC</span><span class="tab-flag" aria-hidden="true"></span></button>
-    <button class="tab" type="button" role="tab" id="tab-computer" aria-controls="screen-computer" aria-selected="false" tabindex="-1" data-tab="computer"><span class="tab-n" aria-hidden="true">06</span><span class="tab-label">COMPUTER</span><span class="tab-flag" aria-hidden="true"></span></button>
-    <button class="tab" type="button" role="tab" id="tab-bans" aria-controls="screen-bans" aria-selected="false" tabindex="-1" data-tab="bans"><span class="tab-n" aria-hidden="true">07</span><span class="tab-label">BANS</span><span class="tab-flag" aria-hidden="true"></span></button>
-    <button class="tab" type="button" role="tab" id="tab-log" aria-controls="screen-log" aria-selected="false" tabindex="-1" data-tab="log"><span class="tab-n" aria-hidden="true">08</span><span class="tab-label">LOG</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-bans" aria-controls="screen-bans" aria-selected="false" tabindex="-1" data-tab="bans"><span class="tab-n" aria-hidden="true">06</span><span class="tab-label">BANS</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-log" aria-controls="screen-log" aria-selected="false" tabindex="-1" data-tab="log"><span class="tab-n" aria-hidden="true">07</span><span class="tab-label">LOG</span><span class="tab-flag" aria-hidden="true"></span></button>
   </nav>
 
   <main class="screens" id="screens">
     <section class="screen" id="screen-status" role="tabpanel" aria-labelledby="tab-status" data-screen="status" tabindex="-1">
-      <div class="grid" id="grid-status">
+      <div class="grid">
       <section class="panel hero span-2" data-hero="status" id="p-hero-status" aria-labelledby="h-hero-status">
         <header class="ph">
           <span class="pid">01</span>
@@ -119,7 +117,7 @@
       </div>
     </section>
     <section class="screen" id="screen-network" role="tabpanel" aria-labelledby="tab-network" data-screen="network" tabindex="-1">
-      <div class="grid" id="grid-network">
+      <div class="grid">
       <section class="panel hero span-full hero-tall" data-hero="network" id="p-hero-network" aria-labelledby="h-hero-network">
         <header class="ph">
           <span class="pid">02</span>
@@ -166,7 +164,7 @@
           <p class="pcap">Every dot is one connection. Peers on the same company's servers land at the same angle, so a pile-up at one angle is a possible spy cluster. Further from the centre means connected longer (rings: 10 min, 1 h, 6 h).</p>
           <details class="tableview">
             <summary>TABLE VIEW</summary>
-            <div class="tablewrap"><table id="peers-table"><thead><tr><th>DIR</th><th>ADDRESS</th><th>FOR</th><th>HEIGHT</th><th>STATE</th><th>DOWN</th><th>UP</th><th>ROUND TRIP</th></tr></thead><tbody></tbody></table></div>
+            <div class="tablewrap"><table id="peers-table"><thead><tr><th>DIR</th><th>ADDRESS</th><th>FOR</th><th>HEIGHT</th><th>STATE</th><th>DOWN</th><th>UP</th></tr></thead><tbody></tbody></table></div>
           </details>
         </div>
       </section>
@@ -174,10 +172,10 @@
         <header class="ph">
           <span class="pid">D</span>
           <h2 id="h-route">ROUTE</h2>
-          <span class="psub" id="route-sub">HOW YOUR NODE IS CONNECTED</span>
+          <span class="psub">HOW YOUR NODE IS CONNECTED</span>
         </header>
         <div class="pb">
-          <svg class="mimic" id="mimic" viewBox="0 0 320 250" role="img" aria-label="Diagram of how your node is connected"></svg>
+          <svg class="mimic" id="mimic" viewBox="0 0 320 206" role="img" aria-label="Diagram of how your node is connected"></svg>
           <dl class="kv" id="route-kv"></dl>
           <p class="pcap">Solid lines are working links, lines lit in the heads-up or problem colour need a look, and dashed outlines are parts the dashboard can't see yet.</p>
         </div>
@@ -185,7 +183,7 @@
       </div>
     </section>
     <section class="screen" id="screen-chain" role="tabpanel" aria-labelledby="tab-chain" data-screen="chain" tabindex="-1">
-      <div class="grid" id="grid-chain">
+      <div class="grid">
       <section class="panel hero span-full" data-hero="chain" id="p-hero-chain" aria-labelledby="h-hero-chain">
         <header class="ph">
           <span class="pid">03</span>
@@ -289,7 +287,7 @@
       </div>
     </section>
     <section class="screen" id="screen-mempool" role="tabpanel" aria-labelledby="tab-mempool" data-screen="mempool" tabindex="-1">
-      <div class="grid" id="grid-mempool">
+      <div class="grid">
       <section class="panel hero span-2" data-hero="mempool" id="p-hero-mempool" aria-labelledby="h-hero-mempool">
         <header class="ph">
           <span class="pid">04</span>
@@ -326,7 +324,7 @@
       </div>
     </section>
     <section class="screen" id="screen-traffic" role="tabpanel" aria-labelledby="tab-traffic" data-screen="traffic" tabindex="-1">
-      <div class="grid" id="grid-traffic">
+      <div class="grid">
       <section class="panel hero span-full" data-hero="traffic" id="p-hero-traffic" aria-labelledby="h-hero-traffic">
         <header class="ph">
           <span class="pid">05</span>
@@ -393,97 +391,11 @@
       </section>
       </div>
     </section>
-    <section class="screen" id="screen-computer" role="tabpanel" aria-labelledby="tab-computer" data-screen="computer" tabindex="-1">
-      <div class="grid" id="grid-computer">
-      <section class="panel hero span-full" data-hero="computer" id="p-hero-computer" aria-labelledby="h-hero-computer">
-        <header class="ph">
-          <span class="pid">06</span>
-          <h2 id="h-hero-computer">GAUGES</h2>
-          <span class="psub" id="hero-computer-sub">—</span>
-          <span class="ph-tools" id="hero-computer-tools"></span>
-        </header>
-        <div class="pb hero-body" id="hero-computer"></div>
-      </section>
-      <section class="panel span-full" data-panel="computer" id="p-computer" aria-labelledby="h-computer">
-        <header class="ph">
-          <span class="pid">J</span>
-          <h2 id="h-computer">COMPUTER</h2>
-          <span class="psub" id="computer-sub" title="Read from /proc, /sys and the ss tool">READ FROM THIS COMPUTER, NOT RPC</span>
-        </header>
-        <div class="pb">
-          <p class="ctl-off" id="comp-off" hidden>—</p>
-          <div class="comp-grid" id="comp-body">
-            <div class="comp-col">
-              <div class="ctl-title">MONEROD PROCESS</div>
-              <div class="figrow comp-figs">
-                <div class="figure">
-                  <div class="fig-label">CPU</div>
-                  <div class="fig-value" id="comp-cpu">—</div>
-                  <div class="fig-note">OF ONE CORE</div>
-                </div>
-                <div class="figure">
-                  <div class="fig-label">MEMORY</div>
-                  <div class="fig-value" id="comp-rss">—</div>
-                  <div class="fig-note">IN USE</div>
-                </div>
-                <div class="figure">
-                  <div class="fig-label">DISK</div>
-                  <div class="fig-value" id="comp-io">—</div>
-                  <div class="fig-note" id="comp-io-note">WRITING</div>
-                </div>
-              </div>
-              <figure class="hchart">
-                <figcaption><span class="hc-title">MONEROD CPU · 15 MIN</span></figcaption>
-                <div class="chart" id="comp-cpu-spark"></div>
-              </figure>
-              <dl class="kv kv-wide" id="comp-proc-kv"></dl>
-              <details class="tableview">
-                <summary>STARTED WITH THESE FLAGS</summary>
-                <ul class="flags" id="comp-flags"></ul>
-              </details>
-            </div>
-            <div class="comp-col">
-              <div class="ctl-title">THIS COMPUTER</div>
-              <div class="figrow comp-figs">
-                <div class="figure">
-                  <div class="fig-label">CPU TEMP</div>
-                  <div class="fig-value" id="comp-temp">—</div>
-                  <div class="fig-note" id="comp-temp-note">—</div>
-                </div>
-                <div class="figure">
-                  <div class="fig-label">POWER</div>
-                  <div class="fig-value fig-word" id="comp-power">—</div>
-                  <div class="fig-note" id="comp-power-note">—</div>
-                </div>
-              </div>
-              <figure class="hchart">
-                <figcaption><span class="hc-title" id="comp-temp-title">CPU TEMP · 15 MIN</span></figcaption>
-                <div class="chart" id="comp-temp-spark"></div>
-              </figure>
-              <div class="meters">
-                <div class="mt-row">
-                  <span class="mt-k">MEMORY</span><span class="mt-v" id="mt-mem-v">—</span>
-                  <div class="meter" id="mt-mem" aria-hidden="true"><span class="mt-fill"></span></div>
-                </div>
-                <div class="mt-row">
-                  <span class="mt-k" id="mt-disk-k">CHAIN DRIVE</span><span class="mt-v" id="mt-disk-v">—</span>
-                  <div class="meter" id="mt-disk" aria-hidden="true"><span class="mt-fill"></span></div>
-                  <span class="mt-note" id="mt-disk-note"></span>
-                </div>
-              </div>
-              <dl class="kv kv-wide" id="comp-kv"></dl>
-            </div>
-          </div>
-          <p class="pcap" id="computer-cap"></p>
-        </div>
-      </section>
-      </div>
-    </section>
     <section class="screen" id="screen-bans" role="tabpanel" aria-labelledby="tab-bans" data-screen="bans" tabindex="-1">
-      <div class="grid" id="grid-bans">
+      <div class="grid">
       <section class="panel hero span-2" data-hero="bans" id="p-hero-bans" aria-labelledby="h-hero-bans">
         <header class="ph">
-          <span class="pid">07</span>
+          <span class="pid">06</span>
           <h2 id="h-hero-bans">BAN CLOCK</h2>
           <span class="psub" id="hero-bans-sub">—</span>
           <span class="ph-tools" id="hero-bans-tools"></span>
@@ -515,10 +427,10 @@
       </div>
     </section>
     <section class="screen" id="screen-log" role="tabpanel" aria-labelledby="tab-log" data-screen="log" tabindex="-1">
-      <div class="grid" id="grid-log">
+      <div class="grid">
       <section class="panel hero span-full" data-hero="log" id="p-hero-log" aria-labelledby="h-hero-log">
         <header class="ph">
-          <span class="pid">08</span>
+          <span class="pid">07</span>
           <h2 id="h-hero-log">EVENT TIMELINE</h2>
           <span class="psub" id="hero-log-sub">—</span>
           <span class="ph-tools" id="hero-log-tools"></span>

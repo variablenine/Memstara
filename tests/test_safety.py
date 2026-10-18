@@ -1,4 +1,4 @@
-"""The safety claims in SAFETY.md, as tests.
+"""The safety claims in SECURITY.md, as tests.
 
 Memstara only reads: every RPC method it can send is on rpc.READ_ALLOWED, and none of
 monerod's methods that change something is on it. Adding a method means changing the

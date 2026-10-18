@@ -1,4 +1,4 @@
-// G · Traffic: download / upload now, totals since the node started, and the
+// F · Traffic: download / upload now, totals since the node started, and the
 // last 15 minutes as a small chart (the server's history in 5 s points, the
 // newest one moving with each reading).
 import { $, setText, setFig } from "../dom.js";

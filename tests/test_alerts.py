@@ -5,8 +5,8 @@ from __future__ import annotations
 import unittest
 
 import helpers
-from memstara import adapter, host
-from memstara.alerts import DEFAULT_CFG, AlertEngine, empty_obs, tor_sending_active
+from memstara import adapter
+from memstara.alerts import DEFAULT_CFG, RPC_IDS, TITLES, AlertEngine, empty_obs, tor_sending_active
 
 MIN = 60
 
@@ -224,91 +224,16 @@ class SpreadTorTest(unittest.TestCase):
         self.assertNotIn("tor", a)
 
     def test_tor_sending_modes(self):
-        self.assertTrue(tor_sending_active("on", False, None))
-        self.assertFalse(tor_sending_active("off", True, 3))
-        self.assertFalse(tor_sending_active("auto", False, None), "the node's flags weren't found")
-        self.assertFalse(tor_sending_active("auto", False, False), "found, without --tx-proxy tor,...")
-        self.assertTrue(tor_sending_active("auto", False, True), "found with --tx-proxy tor,...")
-        self.assertTrue(tor_sending_active("auto", True, None), "Tor peers seen since the node started")
-        self.assertFalse(tor_sending_active("auto", True, False), "found: its flags decide")
-        self.assertFalse(tor_sending_active("auto", False, "yes"), "only True counts")
-
-    def test_tor_alert_not_for_an_i2p_only_proxy(self):
-        argv = ["--tx-proxy", "i2p,127.0.0.1:4447", "--anonymous-inbound", "x.b32.i2p,127.0.0.1:18085"]
-        ns = host.node_settings(argv, "/home/u", read_file=lambda p: None)
-        self.assertEqual((ns["tx_proxy"], ns["tx_proxy_tor"]), (True, False))
-        h = Harness()
-        o = healthy(tor_out=0, tor_active=tor_sending_active("auto", False, ns["tx_proxy_tor"]))
-        h.run(o)
-        a, _ = h.run(o, 11 * MIN)
-        self.assertNotIn("tor", a)
-        ns = host.node_settings(["--tx-proxy", "tor,127.0.0.1:9050,16", "--tx-proxy", "i2p,127.0.0.1:4447"], "/home/u",
-                                read_file=lambda p: None)
-        self.assertEqual((ns["tx_proxy"], ns["tx_proxy_tor"]), (True, True))
-
-
-def pc(**kw):
-    c = {"cpu_temp_c": 55.0, "on_ac": True, "battery_pct": 100, "mem_used_bytes": 4 * 10 ** 9,
-         "mem_total_bytes": 16 * 10 ** 9}
-    c.update(kw)
-    return c
-
-
-class ComputerTest(unittest.TestCase):
-    def test_cpu_heat_after_two_minutes(self):
-        h = Harness({"temp_unit": "f"})
-        warm = healthy(computer=pc(cpu_temp_c=88.0))
-        h.run(warm)
-        a, _ = h.run(warm, 2 * MIN - 1)
-        self.assertNotIn("cpu_temp", a)
-        a, _ = h.run(warm, 1)
-        self.assertEqual((a["cpu_temp"]["level"], a["cpu_temp"]["title"]), ("warn", "CPU HOT"))
-        self.assertEqual(a["cpu_temp"]["text"], "The CPU has been at or above 185 °F for 2 min and reads 190 °F now")
-        hot = healthy(computer=pc(cpu_temp_c=97.2))
-        h.run(hot, 5)
-        a, _ = h.run(hot, 2 * MIN)
-        self.assertEqual((a["cpu_temp"]["level"], a["cpu_temp"]["title"]), ("bad", "CPU VERY HOT"))
-        self.assertTrue(a["cpu_temp"]["text"].startswith("The CPU has been at or above 203 °F for 2 min and reads 207 °F"))
-        a, _ = h.run(healthy(computer=pc()), 10)
-        self.assertNotIn("cpu_temp", a)
-        self.assertEqual(h.events[-1]["text"], "Cleared: CPU VERY HOT")
-
-    def test_temperature_words_follow_the_setting(self):
-        h = Harness({"temp_unit": "auto", "hot_min": 0})
-        a, _ = h.run(healthy(computer=pc(cpu_temp_c=86.0)))
-        self.assertEqual(a["cpu_temp"]["text"],
-                         "The CPU has been at or above 185 °F (85 °C) for 0 min and reads 187 °F (86 °C) now")
-        h = Harness({"temp_unit": "c", "hot_min": 0})
-        a, _ = h.run(healthy(computer=pc(cpu_temp_c=86.0)))
-        self.assertIn("at or above 85 °C", a["cpu_temp"]["text"])
-
-    def test_memory_and_power(self):
-        h = Harness()
-        o = healthy(computer=pc(mem_used_bytes=15 * 10 ** 9, on_ac=False, battery_pct=64))
-        h.run(o)
-        a, _ = h.run(o, 1 * MIN)
-        self.assertEqual(a["power"]["text"], "This computer has been on battery for 1 min (64% left)")
-        self.assertNotIn("memory", a)
-        a, _ = h.run(o, 4 * MIN)
-        self.assertEqual(a["memory"]["text"], "93% of this computer's memory has been in use for 5 min")
-        low = healthy(computer=pc(on_ac=False, battery_pct=12))
-        h.run(low, 5)
-        a, _ = h.run(low, 1 * MIN)
-        self.assertEqual((a["power"]["level"], a["power"]["title"]), ("bad", "BATTERY LOW"))
-        a, _ = h.run(healthy(computer=pc(on_ac=None, battery_pct=None)), 5)
-        self.assertNotIn("power", a, "no battery or no reading: nothing to say")
-
-    def test_goes_on_while_the_node_is_away_and_pauses_without_readings(self):
-        h = Harness({"hot_min": 0})
-        a, _ = h.run(healthy(answering=False, computer=pc(cpu_temp_c=99.0)))
-        self.assertEqual(a["cpu_temp"]["level"], "bad")
-        n = len(h.events)
-        a, _ = h.run(healthy(computer=None), 5)
-        self.assertNotIn("cpu_temp", a)
-        self.assertEqual(len(h.events), n, "no readings (local reads off): paused, not cleared")
+        self.assertTrue(tor_sending_active("on", False))
+        self.assertFalse(tor_sending_active("off", True))
+        self.assertFalse(tor_sending_active("auto", False), "no Tor peers seen since the node started")
+        self.assertTrue(tor_sending_active("auto", True), "Tor peers seen since the node started")
 
 
 class OrderTest(unittest.TestCase):
+    def test_every_alert_is_from_rpc(self):
+        self.assertEqual(set(TITLES), set(RPC_IDS), "nothing about this computer itself")
+
     def test_worst_first_then_oldest(self):
         h = Harness()
         h.run(healthy(double_spends=1))

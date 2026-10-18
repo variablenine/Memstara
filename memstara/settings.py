@@ -18,11 +18,11 @@ from urllib.parse import urlsplit
 
 from .util import atomic_write, config_dir, ensure_private_dir
 
-# the core panels, in grid order (A to K on the screens)
+# the core panels, in grid order (A to L on the screens; there is no J)
 PANEL_IDS = ["lamps", "chain", "peers", "route", "bans", "traffic", "history", "mempool", "events",
-             "computer", "system", "flood"]
+             "system", "flood"]
 
-SECTIONS = ["source", "local", "thresholds", "grace", "display", "panels", "chain", "node", "server"]
+SECTIONS = ["source", "thresholds", "grace", "display", "panels", "chain", "node", "server"]
 
 
 def entry(key, type_, default, label, help_="", min_=None, max_=None, step=None, choices=None, unit=None):
@@ -43,9 +43,8 @@ SCHEMA = [
     # ---- where the data comes from
     _e("source.rpc_url", "url", "http://127.0.0.1:18081", "Node RPC address",
        "monerod's RPC address. Use the unrestricted (admin) port, for example "
-       "http://127.0.0.1:18081 (monerod's default); a restricted port hides peers, bans and traffic. "
-       "FIND MY NODE reads it from the running monerod. For a node on another computer, an SSH tunnel "
-       "to it keeps its answers private (see the README)."),
+       "http://127.0.0.1:18081 (monerod's default); a restricted port hides peers, bans, traffic and disk space. "
+       "For a node on another computer, an SSH tunnel to it keeps its answers private (see the README)."),
     _e("source.rpc_user", "text", "", "RPC user",
        "Only if monerod runs with --rpc-login."),
     _e("source.rpc_password", "password", "", "RPC password",
@@ -56,16 +55,10 @@ SCHEMA = [
        unit="s"),
     _e("source.timeout_s", "int", 8, "Give up waiting after",
        "How long to wait for one answer from the node.", 2, 30, unit="s"),
-    # ---- reads from this computer (see host.py)
-    _e("local.enabled", "bool", True, "Read this computer",
-       "monerod's log, its process, peers' round trips, CPU temperature, power, the network link "
-       "the node is bound to and the Tor proxy. Read-only."),
-    _e("local.every_s", "choice", 1, "Read the computer every", "",
-       choices=[(1, "1 second"), (5, "5 seconds"), (10, "10 seconds"), (30, "30 seconds")], unit="s"),
     # ---- alert thresholds
     _e("thresholds.out_wanted", "int", 0, "Outgoing connections wanted",
-       "0 uses the node's own: its --out-peers flag, else monerod's default of 12. If you change "
-       "it with the out_peers command, put the new number here.", 0, 1000, unit="peers"),
+       "0 uses monerod's default of 12. If monerod runs with --out-peers, or you changed it with "
+       "monerod's own out_peers command, put that number here.", 0, 1000, unit="peers"),
     _e("thresholds.low_peers", "int", 8, "Few outgoing below",
        "Heads-up when fewer outgoing connections than this.", 0, 1000, unit="peers"),
     _e("thresholds.no_block_warn_min", "int", 30, "No new block: heads-up after",
@@ -93,9 +86,8 @@ SCHEMA = [
     _e("thresholds.flood_bad", "int", 8, "Black marble: problem below",
        "Must be lower than the heads-up level.", 1, 15, unit="of 16"),
     _e("thresholds.tor_sending", "choice", "auto", "Tor sending",
-       "Whether monerod sends your transactions over Tor (--tx-proxy tor,...). Auto: on when the running "
-       "monerod has --tx-proxy tor,... (read from its flags); when it can't be found, once Tor connections "
-       "are seen since it started.",
+       "Whether monerod sends your transactions over Tor (--tx-proxy tor,...). Auto: on once Tor "
+       "connections are seen since monerod started.",
        choices=[("auto", "Auto"), ("on", "On"), ("off", "Off")]),
     # ---- how long a problem must last
     _e("grace.node_down_min", "int", 5, "Node not answering for", "", 0, 120, unit="min"),
@@ -125,11 +117,8 @@ SCHEMA = [
     _e("display.text_scale", "choice", 100, "Text size", "",
        choices=[(90, "90%"), (100, "100%"), (115, "115%"), (130, "130%")], unit="%"),
     _e("display.keys", "bool", False, "Keyboard shortcuts",
-       "Off by default so a stray key press can't trigger them. 1 to 8 switch screens, S settings, C commands, "
+       "Off by default so a stray key press can't trigger them. 1 to 7 switch screens, S settings, C commands, "
        "A acknowledge, T lamp test."),
-    _e("display.temp_unit", "choice", "auto", "Temperature",
-       "Auto: °F when your computer's language is US English, °C otherwise.",
-       choices=[("auto", "Auto (by language)"), ("f", "°F"), ("c", "°C")]),
     _e("display.privacy", "bool", False, "Privacy mode",
        "Hides addresses, ports, names, folders and transaction ids behind a glitch, so the screens can "
        "be shown to other people. The PRIVACY switch at the top turns it on and off."),
@@ -139,15 +128,15 @@ KEEP_ON_RESET = ("display.privacy",)
 _PANEL_LABELS = {
     "lamps": "Lamp wall", "chain": "Chain", "peers": "Peer scope", "route": "Route", "bans": "Ban list",
     "traffic": "Traffic", "history": "History", "mempool": "Mempool", "events": "Log",
-    "computer": "Computer", "system": "System", "flood": "Black marble watch",
+    "system": "System", "flood": "Black marble watch",
 }
 SCHEMA += [_e("panels." + p, "bool", True, _PANEL_LABELS[p], "Show this panel.") for p in PANEL_IDS]
 SCHEMA += [
     _e("chain.blocks_shown", "int", 60, "Blocks on the tape", "", 20, 200, unit="blocks"),
     _e("node.log_path", "path", "~/.bitmonero/bitmonero.log", "monerod's log",
-       "monerod's own log file (--log-file), shown in the command drawer and read for the event log. "
-       "Read-only. FIND MY NODE reads it from the running monerod. For a node on another computer, "
-       "point it at a copy or a mounted folder."),
+       "monerod's own log file (its --log-file, else bitmonero.log in its data folder), shown in the "
+       "command drawer and read for the event log. Read-only. For a node on another computer, point it "
+       "at a copy or a mounted folder."),
     _e("server.port", "int", 18200, "Window port",
        "The port the app window gets its readings over, on this computer only (127.0.0.1). "
        "Change it only if another program uses 18200. Takes effect the next time the app starts.",
@@ -158,10 +147,10 @@ SCHEMA_BY_KEY = {e["key"]: e for e in SCHEMA}
 DEFAULTS = {e["key"]: e["default"] for e in SCHEMA}
 
 # The settings file's format, saved in it as "format". A file without one is format 1,
-# whose defaults for how often to read (the node every 5 s, the computer every 10 s) move
-# to the current ones once. A value someone picked themselves stays.
+# whose default for how often to read the node (every 5 s) moves to the current one once.
+# A value someone picked themselves stays.
 FORMAT = 2
-OLD_DEFAULTS = {1: {"source.refresh_s": 5, "local.every_s": 10}}
+OLD_DEFAULTS = {1: {"source.refresh_s": 5}}
 
 
 def file_format(raw: dict) -> int:
@@ -187,13 +176,12 @@ def migrate(raw: dict) -> dict | None:
     return out
 
 
-def node_log_path(values: dict, found: str | None) -> str:
-    """monerod's log as the dashboard reads it: node.log_path, unless it was left at its default
-    and the running node was found writing somewhere else (its --log-file or --data-dir)."""
-    path = values.get("node.log_path") or DEFAULTS["node.log_path"]
-    return found if found and path == DEFAULTS["node.log_path"] else path
-PASSWORD_KEYS = [e["key"] for e in SCHEMA if e["type"] == "password"]
+def node_log_path(values: dict) -> str:
+    """monerod's log as the dashboard reads it: node.log_path, or its default when left empty."""
+    return values.get("node.log_path") or DEFAULTS["node.log_path"]
 
+
+PASSWORD_KEYS = [e["key"] for e in SCHEMA if e["type"] == "password"]
 
 
 class SettingsError(Exception):
@@ -351,14 +339,12 @@ class Settings:
         self._overrides: dict = {}
         self._listeners = []
         self._log = log or (lambda msg: print(msg, file=sys.stderr))
-        self.file_keys: set = set()    # keys the file held at load (empty on a first run)
         self.load_warnings: list[str] = []
 
     # ---- loading and saving
     def load(self) -> "Settings":
         with self._lock:
             if not self.path.exists():
-                self.file_keys = set()
                 self._values = dict(self.defaults)
                 if self._save_enabled:
                     self._save_locked()
@@ -377,7 +363,6 @@ class Settings:
                         os.replace(self.path, bad)
                 except OSError:
                     pass
-                self.file_keys = set()
                 self._values = dict(self.defaults)
                 if self._save_enabled:
                     self._save_locked()
@@ -392,7 +377,6 @@ class Settings:
                     except OSError as e:
                         self._warn("Settings file %s couldn't be updated (%s)." % (self.path, type(e).__name__))
             flat = flatten(raw)
-            self.file_keys = set(flat)
             values = dict(self.defaults)
             for k, v in flat.items():
                 if k not in self.by_key:
@@ -548,7 +532,3 @@ class Settings:
                 fn(changed)
             except Exception as e:  # a listener must never break saving
                 self._log("settings listener failed: %s" % type(e).__name__)
-
-
-def expand_path(p: str) -> str:
-    return os.path.expanduser(os.path.expandvars(p))

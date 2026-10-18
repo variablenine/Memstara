@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 import helpers
-from helpers import WRITE, StubDiscover, StubHost, found_node, get_json, request
+from helpers import WRITE, get_json, request
 from fake_monerod import CHAIN_TX, POOL_TX, FakeMonerod
 from memstara import commands as C
 from memstara.app import App
@@ -344,8 +344,8 @@ class HttpTest(unittest.TestCase):
         cls.settings = make_settings(cls.fake.url)
         cls.tmp = tempfile.TemporaryDirectory()
         base = Path(cls.tmp.name)
-        cls.app = App(cls.settings, port=0, web_dir=base / "web", state_dir=base / "state", log=lambda m: None,
-                      host_reader=StubHost(), discover=StubDiscover([found_node(cls.fake.url)])).start(poll=False)
+        cls.app = App(cls.settings, port=0, web_dir=base / "web", state_dir=base / "state",
+                      log=lambda m: None).start(poll=False)
         cls.port = cls.app.port
 
     @classmethod

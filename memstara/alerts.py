@@ -9,12 +9,9 @@ from __future__ import annotations
 
 from .util import clock_style, clock_text
 
-# every id the core raises itself: from the node's RPC, then from this computer's own
-# readings (local reads), which go on whether or not the node answers
+# every id the core raises itself, all from the node's RPC
 RPC_IDS = ("node_down", "peers", "syncing", "no_blocks", "disk", "reorg",
            "double_spend", "restarts", "spread_out", "spread_in", "tor", "flood")
-COMPUTER_IDS = ("cpu_temp", "memory", "power")
-DASHBOARD_IDS = RPC_IDS + COMPUTER_IDS
 
 TITLES = {
     "node_down": "NODE NOT ANSWERING",
@@ -29,9 +26,6 @@ TITLES = {
     "spread_in": "ECLIPSE WATCH · IN",
     "tor": "NO TOR CONNECTIONS",
     "flood": "BLACK MARBLE WATCH",
-    "cpu_temp": "CPU HOT",
-    "memory": "MEMORY ALMOST FULL",
-    "power": "ON BATTERY",
 }
 
 
@@ -40,10 +34,6 @@ def title_for(alert_id: str, level: str | None = None) -> str:
         return "NO OUTGOING"
     if alert_id == "disk":
         return "DISK ALMOST FULL" if level == "bad" else "DISK GETTING FULL"
-    if alert_id == "cpu_temp" and level == "bad":
-        return "CPU VERY HOT"
-    if alert_id == "power" and level == "bad":
-        return "BATTERY LOW"
     return TITLES.get(alert_id) or str(alert_id).replace("_", " ").upper()[:30]
 
 
@@ -53,11 +43,7 @@ DEFAULT_CFG = {
     "out16_warn": 5, "in24_warn": 4, "restart_warn": 3, "flood_warn": 11, "flood_bad": 8,
     "node_down_min": 5, "no_peers_min": 5, "peers_min": 10, "syncing_min": 20,
     "spread_min": 10, "tor_min": 10, "flood_min": 30,
-    # this computer (no settings for these; web/js/panels/computer.js draws the same limits):
-    # most processors slow themselves down to cool off at about 95 to 105 °C
-    "temp_warn_c": 85, "temp_bad_c": 95, "mem_warn_pct": 90, "battery_bad_pct": 20,
-    "hot_min": 2, "memory_min": 5, "power_min": 1,
-    "clock": "12h", "temp_unit": "auto",
+    "clock": "12h",
 }
 
 
@@ -68,35 +54,19 @@ def cfg_from_settings(values: dict) -> dict:
             if sec + k in values:
                 cfg[k] = values[sec + k]
     cfg["clock"] = clock_style(values)
-    cfg["temp_unit"] = values.get("display.temp_unit", "auto")
     return cfg
 
 
-def temp_text(c: float, unit: str = "auto") -> str:
-    """A temperature as the settings show it. "auto" is decided by the screens' language
-    (the computer's), which the server doesn't see, so it gives both."""
-    f = round(c * 9 / 5 + 32)
-    if unit == "f":
-        return "%d °F" % f
-    if unit == "c":
-        return "%d °C" % round(c)
-    return "%d °F (%d °C)" % (f, round(c))
-
-
-def tor_sending_active(setting: str, tor_seen: bool, tx_proxy_tor) -> bool:
+def tor_sending_active(setting: str, tor_seen: bool) -> bool:
     """Is Tor sending (monerod --tx-proxy tor,...) on, as far as the dashboard can tell?
 
-    "on"/"off" are taken as given. "auto": when the running monerod was found, its flags
-    decide (tx_proxy_tor True or False, from its flags or config file; an I2P-only --tx-proxy
-    is False); when it wasn't (None), on once outgoing Tor peers have been seen since the
-    node last started (tor_seen).
+    "on"/"off" are taken as given. "auto": on once outgoing Tor peers have been seen in
+    get_connections since the node last started (tor_seen).
     """
     if setting == "on":
         return True
     if setting != "auto":
         return False
-    if tx_proxy_tor is not None:
-        return tx_proxy_tor is True
     return bool(tor_seen)
 
 
@@ -115,7 +85,6 @@ def empty_obs() -> dict:
         "reorgs": [], "double_spends": None, "restarts": [],
         "out16": None, "in24": None,
         "flood": None,          # snapshot.chain.flood (flood.py)
-        "computer": None,       # snapshot.host.computer, or None when this computer isn't read
     }
 
 
@@ -168,7 +137,6 @@ class AlertEngine:
             self._drop("peers_zero", "peers_low", "syncing", "spread_out", "spread_in", "tor_zero", "disk")
         else:
             self._rpc_rules(obs, cfg, now, mins, grace, add, paused)
-        self._computer_rules(obs.get("computer"), cfg, now, mins, grace, add, paused)
 
         # ---- events on raise / clear, paused alerts neither clear nor re-announce
         events = []
@@ -190,48 +158,6 @@ class AlertEngine:
         out = [a for aid, a in new_active.items() if aid not in paused]
         out.sort(key=lambda a: (LEVEL_RANK.get(a["level"], 2), a["since"], a["id"]))
         return out, events
-
-    def _computer_rules(self, pc, cfg, now, mins, grace, add, paused):
-        """This computer's own readings: CPU temperature, memory and power."""
-        if pc is None:
-            paused.update(COMPUTER_IDS)
-            self._drop("hot", "hot_bad", "memory", "power", "power_low")
-            return
-        num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
-
-        # ---- CPU temperature (the hottest sensor)
-        c = pc.get("cpu_temp_c")
-        hot = self._held("hot", num(c) and c >= cfg["temp_warn_c"], now)
-        very = self._held("hot_bad", num(c) and c >= cfg["temp_bad_c"], now)
-        if very is not None and very >= grace("hot_min"):
-            add("cpu_temp", "bad", "The CPU has been at or above %s for %d min and reads %s now: most "
-                "processors slow themselves down to cool off at this heat" % (
-                    temp_text(cfg["temp_bad_c"], cfg["temp_unit"]), mins(very), temp_text(c, cfg["temp_unit"])),
-                now - very)
-        elif hot is not None and hot >= grace("hot_min"):
-            add("cpu_temp", "warn", "The CPU has been at or above %s for %d min and reads %s now" % (
-                temp_text(cfg["temp_warn_c"], cfg["temp_unit"]), mins(hot), temp_text(c, cfg["temp_unit"])),
-                now - hot)
-
-        # ---- memory in use
-        used, total = pc.get("mem_used_bytes"), pc.get("mem_total_bytes")
-        share = used / total * 100 if num(used) and num(total) and total > 0 else None
-        m = self._held("memory", share is not None and share >= cfg["mem_warn_pct"], now)
-        if m is not None and m >= grace("memory_min"):
-            add("memory", "warn", "%d%% of this computer's memory has been in use for %d min" % (share, mins(m)),
-                now - m)
-
-        # ---- power: unplugged is a heads-up, a low battery while unplugged a problem
-        pct = pc.get("battery_pct")
-        unplugged = pc.get("on_ac") is False
-        u = self._held("power", unplugged, now)
-        low = self._held("power_low", unplugged and num(pct) and pct < cfg["battery_bad_pct"], now)
-        if low is not None and low >= grace("power_min"):
-            add("power", "bad", "This computer is on battery with %d%% left: the node stops when it runs out"
-                % pct, now - low)
-        elif u is not None and u >= grace("power_min"):
-            add("power", "warn", "This computer has been on battery for %d min%s" % (
-                mins(u), " (%d%% left)" % pct if num(pct) else ""), now - u)
 
     def _rpc_rules(self, obs, cfg, now, mins, grace, add, paused):
         clock = cfg.get("clock", "12h")

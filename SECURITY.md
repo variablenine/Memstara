@@ -18,8 +18,13 @@ What's in scope:
   reach;
 - the read-only RPC list and the commands built on it (`memstara/rpc.py`,
   `memstara/commands.py`);
+- reading more than `monerod`'s RPC, its log file and the app's own files
+  (privacy mode only looks up this computer's name, your names and your home
+  folder, to hide them, and a window without its packages reads
+  `/etc/os-release` to print the install command), or a log path the log
+  readers should refuse (`memstara/nodelog.py`, `memstara/logevents.py`);
 - privacy mode letting a real address, port, name or transaction id through to
   the window;
-- anything that writes outside `~/.config/memstara`, `~/.local/state/memstara`
-  and the app's own entries in `~/.local/share/applications` and
-  `~/.config/autostart`.
+- anything that writes outside `~/.config/memstara`, `~/.local/state/memstara`,
+  `~/.cache/memstara` and the app's own entries in
+  `~/.local/share/applications` and `~/.config/autostart`.

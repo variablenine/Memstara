@@ -17,8 +17,7 @@ function niceMax(v) {
 const kept = new WeakMap();   // container -> {root, body, cross, hit, st}
 let reading = null;           // the chart whose reading is open, if any
 
-// opts: { t: [unix], series: [{key: "s1", name, values: [], fmt}], height, yFmt, empty, label,
-//         minTop (the scale never tops out lower, so tiny values don't make "0% 0% 0%" ticks) }
+// opts: { t: [unix], series: [{key: "s1", name, values: [], fmt}], height, yFmt, empty, label }
 // The chart is one Tab stop: focus shows the newest reading, the arrow keys
 // (Home / End) move it, and a tap or click reads the moment under it. A
 // redraw keeps focus and the moment being read.
@@ -30,7 +29,7 @@ export function lineChart(container, opts) {
 
   let maxV = 0;
   for (const s of opts.series) for (const v of s.values) if (f.isNum(v) && v > maxV) maxV = v;
-  const top = niceMax(Math.max(maxV, opts.minTop || 0));
+  const top = niceMax(maxV);
   const hasData = n > 1 && opts.series.some((s) => s.values.some(f.isNum));
   const yFmt = opts.yFmt || ((v) => f.num(v));
   const ticks = [0, 0.5, 1].map((frac) => ({ frac, text: yFmt(top * frac) }));

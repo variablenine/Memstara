@@ -273,7 +273,6 @@ export default function create(body, env) {
       { label: "ITS HEIGHT", value: f.isNum(p.height) && p.height > 0 ? `${f.num(p.height)}${lag ? ` (${lag > 0 ? "+" : f.MINUS}${f.num(Math.abs(lag))})` : ""}` : "—" },
       { label: "STATE", value: String(p.state || "—").toUpperCase() },
     ];
-    if (f.isNum(p.rtt_ms)) rows.push({ label: "ROUND TRIP", value: f.ms(p.rtt_ms) });
     if (p.kind === "ipv4" && p.net16) rows.push({ label: "COMPANY RANGE", value: `${p.net16}.x.x` });
     if (p.pruned) rows.push({ label: "KEEPS", value: "PART OF THE CHAIN (PRUNED)" });
     if (n.warn) rows.push(warnNote(n.warn));

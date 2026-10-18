@@ -1,4 +1,4 @@
-// F · Mempool: transactions waiting to go into a block, and how long they
+// H · Mempool: transactions waiting to go into a block, and how long they
 // have been waiting (monerod's own age histogram).
 import { $, svg, clear, setText, setData, widthOf, focusedItem, rove } from "../dom.js";
 import { attachTip } from "../tooltip.js";

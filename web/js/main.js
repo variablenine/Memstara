@@ -4,7 +4,7 @@
 import { $ } from "./dom.js";
 import { refreshTip } from "./tooltip.js";
 import { api } from "./api.js";
-import { setClockMode, setTempUnit, setUtc, zoneWord } from "./fmt.js";
+import { setClockMode, setUtc, zoneWord } from "./fmt.js";
 import { startPrivacy, initPrivacySwitch, followPrivacy, learnHidden, setPrivacyMotion, arrive } from "./privacy.js";
 import { renderHeader, renderServerLost, tickClock } from "./panels/header.js";
 import { renderAlerts } from "./panels/alerts.js";
@@ -18,7 +18,6 @@ import { initHistory, refreshHistory, recordHistory } from "./panels/history.js"
 import { renderSystem, setSystemSettings } from "./panels/system.js";
 import { initFlood, renderFlood, setFloodSettings } from "./panels/flood.js";
 import { renderEvents } from "./panels/events.js";
-import { initComputer, renderComputer, seedComputer, recordComputer } from "./panels/computer.js";
 import { initBans, renderBans, setBanSettings } from "./panels/bans.js";
 import { initConfirm } from "./confirm.js";
 import { initCommands, openCommands, commandsOpen } from "./commands.js";
@@ -97,7 +96,6 @@ function applySettings(v) {
   root.dataset.density = v["display.density"] || "comfortable";
   root.style.setProperty("--scale", String((Number(v["display.text_scale"]) || 100) / 100));
   setClockMode(v["display.clock"]);
-  setTempUnit(v["display.temp_unit"] || "auto");
   state.keys = v["display.keys"] === true;
   const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
   const meta = document.querySelector('meta[name="theme-color"]');
@@ -136,7 +134,6 @@ function draw(snap) {
   panel("system", () => renderSystem(snap));
   panel("flood", () => renderFlood(snap));
   panel("events", () => renderEvents(snap));
-  panel("computer", () => renderComputer(snap));
   panel("bans", () => renderBans(snap));
   guard("tooltip", refreshTip);   // details left open on a lamp, a row or a dot move with the rest
 }
@@ -171,10 +168,8 @@ function onSnapshot(snap) {
   state.failures = 0;
   state.late = false;
   markStale(false);
-  // the small charts keep every reading, whatever is on show
-  const a = guard("traffic", () => recordTraffic(snap));
-  const b = guard("computer", () => recordComputer(snap));
-  if (a === false || b === false) seedPanels();
+  // the small chart keeps every reading, whatever is on show
+  if (guard("traffic", () => recordTraffic(snap)) === false) seedPanels();
   guard("history", () => recordHistory(snap, panelOn("history")));
   draw(snap);
   if (modeChanged) refreshHistory();
@@ -189,7 +184,7 @@ function recovered(snap) {
   guard("header", () => renderHeader(snap));
 }
 
-// the small 15-minute charts from the server's history (at start, after the window was
+// the small 15-minute chart from the server's history (at start, after the window was
 // hidden, and when the readings can't simply be added on)
 let seededAt = -Infinity;
 function seedPanels(force = false) {
@@ -197,12 +192,9 @@ function seedPanels(force = false) {
   seededAt = Date.now();
   api.history(900).then((h) => {
     seedTraffic(h);
-    seedComputer(h);
     if (!state.snap) return;
     guard("traffic", () => recordTraffic(state.snap));
-    guard("computer", () => recordComputer(state.snap));
     if (panelOn("traffic")) guard("traffic", () => renderTraffic(state.snap));
-    if (panelOn("computer")) guard("computer", () => renderComputer(state.snap));
   }).catch(() => {});
 }
 
@@ -289,7 +281,7 @@ function onKey(e) {
   else if (k === "c") { e.preventDefault(); openCommands(); }
   else if (k === "a") ackAll();
   else if (k === "t") lampTest();
-  else if (/^[1-8]$/.test(k)) selectScreen(SCREENS[Number(k) - 1], { scroll: true });
+  else if (/^[1-7]$/.test(k)) selectScreen(SCREENS[Number(k) - 1], { scroll: true });
 }
 
 function bootWanted(v) {
@@ -327,7 +319,6 @@ async function start() {
   initMempool();
   initTraffic();
   initHistory();
-  initComputer();
   initFlood();
   initConfirm();
   initCommands();

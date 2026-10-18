@@ -54,7 +54,7 @@ screens, sequence-of-event logs).
     once a second until acknowledged (an on-screen acknowledgement only; it
     changes nothing on the node). `TEST` lights every lamp for two seconds.
 12. **Screens, each with a centrepiece.** Tabs across the top (STATUS, NETWORK,
-    CHAIN, MEMPOOL, TRAFFIC, COMPUTER, CONTROLS, LOG) show one screen at a time,
+    CHAIN, MEMPOOL, TRAFFIC, BANS, LOG) show one screen at a time,
     or all of them stack on one page (Settings → LOOK → Screens). Each screen
     opens with an animated centrepiece ("hero") drawn from real readings; the
     older panels follow it. A tab shows ▲ / ■ when its screen has an alert.

@@ -2,8 +2,9 @@
 
 It reads node.log_path: at most the last 512 KB of a regular file, never written, never a symlink out of the user's home folder, and never
 blocking on a pipe or device. A file inside the dashboard's own settings or state folder, or
-one whose name has no ".log", isn't read either, unless it is the log file host.discover
-found for the node (util.log_path_refusal).
+one whose name has no ".log", isn't read either (util.log_path_refusal). While the RPC
+address isn't on this computer, the log at the default place may be another node's, so it
+is read only from a path set by hand.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ import os
 import re
 import stat
 
+from .rpc import on_this_computer
 from .settings import DEFAULTS, node_log_path
 from .util import log_path_refusal
 
@@ -53,11 +55,10 @@ def resolve(configured: str) -> str:
     return real
 
 
-def tail(configured: str, lines: int = DEFAULT_LINES, name: str = "the log", node_log: str | None = None) -> dict:
-    """`node_log`: the log file host.discover found for the node, which may always be read."""
+def tail(configured: str, lines: int = DEFAULT_LINES, name: str = "the log") -> dict:
     path = os.path.abspath(os.path.expanduser(configured or ""))
     real = resolve(configured)
-    why = log_path_refusal(real, node_log)
+    why = log_path_refusal(real)
     if why == "own":
         raise LogError(403, "%s is in the dashboard's own settings or state folder, so it isn't read." % path)
     if why == "name":
@@ -99,11 +100,8 @@ def tail(configured: str, lines: int = DEFAULT_LINES, name: str = "the log", nod
             "lines": rows[-lines:] if lines else []}
 
 
-def read(settings, source: str, lines_text: str | None, node_log: str | None = None,
-         remote: bool = False) -> tuple[int, dict]:
-    """The API answer: (status, body). `node_log` is the log file host.discover found for the
-    node (Poller.node_log_file()), or None. `remote`: the node runs on another computer
-    (Poller.node_elsewhere()), so its log is read only from a path set by hand."""
+def read(settings, source: str, lines_text: str | None) -> tuple[int, dict]:
+    """The API answer: (status, body)."""
     if source not in SOURCES:
         return 400, {"ok": False, "error": "source must be monerod"}
     n = DEFAULT_LINES
@@ -112,13 +110,12 @@ def read(settings, source: str, lines_text: str | None, node_log: str | None = N
             return 400, {"ok": False, "error": "lines must be 1 to %d" % MAX_LINES}
         n = int(lines_text)
     setting, name = SOURCES[source], NAMES[source]
-    path = settings.get(setting)
-    if remote and path == DEFAULTS["node.log_path"]:
-        return 404, {"ok": False, "error": "The node runs on another computer, so its log isn't on this one. "
-                     "To read it here, copy it over or mount its folder, and set monerod's log in Settings."}
-    path = node_log_path({"node.log_path": path}, node_log)
+    path = node_log_path({"node.log_path": settings.get(setting)})
+    if path == DEFAULTS["node.log_path"] and not on_this_computer(settings.get("source.rpc_url")):
+        return 404, {"ok": False, "error": "The node's RPC address isn't on this computer, so the log at the "
+                     "default place may be another node's. To read the node's own, set monerod's log in Settings."}
     try:
-        out = tail(path, n, name, node_log)
+        out = tail(path, n, name)
     except LogError as e:
         return e.status, {"ok": False, "error": e.error}
     out["source"] = source

@@ -12,9 +12,8 @@ on the node: it asks the node's RPC port the same questions `monerod`'s own
 read-only console commands ask (each one is a front end for an RPC request,
 see `src/daemon/rpc_command_executor.cpp` in Monero's source), and every
 method it can send is on one short list in `memstara/rpc.py`. Monero updates
-don't need dashboard updates. Reads go a little further: it also looks at
-`monerod`'s log file and at the computer itself, read-only, for things RPC
-doesn't report.
+don't need dashboard updates. Besides RPC it reads only `monerod`'s own log
+file, read-only, for things RPC doesn't report.
 
 ![the app window on the NETWORK screen: a 3D tree of the node's connections with live chatter beside it](docs/screens.png)
 
@@ -22,7 +21,7 @@ doesn't report.
 
 ## What's on the screen
 
-Eight screens, one per tab across the top (or all on one page, in Settings →
+Seven screens, one per tab across the top (or all on one page, in Settings →
 LOOK). Each opens with an animated picture drawn from the node's real
 readings, then the panels for that part of the node. The ground is pure black
 (pixels off on an OLED screen), with a slow breathing glow; a screen with a
@@ -35,7 +34,6 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 | CHAIN | The last blocks as boxes receding into the distance, sized by weight and spaced by the wait before each, with the next block's timer. | B · Chain, K · System, L · Black marble watch |
 | MEMPOOL | One dot per waiting transaction, in bands by how long it has waited. | H · Mempool |
 | TRAFFIC | A scope of download and upload over the last 15 minutes. | F · Traffic, G · History |
-| COMPUTER | Dials for CPU temperature (°C or °F), monerod's CPU, memory, how busy the chain's drive is, and disk free. | J · Computer |
 | BANS | A clock of the short bans, each ring draining as its time runs out. | E · Ban list |
 | LOG | Lanes of what happened in the last hour, with the newest typed out underneath. | I · Log |
 
@@ -44,13 +42,12 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 | A · Lamp wall | One lamp per thing being watched. Grey is fine, a lit ▲ is a heads-up, a lit ■ is a problem. A new lamp flashes until you click ACK. TEST lights them all for 2 seconds. |
 | B · Chain | Height, how long since the last block (and how unusual that wait is), the last 60 blocks drawn as a timeline, average gap, blocks replaced, network hashrate. |
 | C · Peer scope | Every connection as a dot. Peers from the same company's servers stack at the same angle, so a spy cluster shows up as a pile-up. Distance from the middle is how long it's been connected. |
-| D · Route | How the node is connected: other nodes, the network link it's bound to (a VPN, if you use one), your node, Tor and the dashboard. |
+| D · Route | How the node is connected: other nodes, your node, Tor sending and the dashboard (with how fast the node answers). |
 | E · Ban list | What your node is banning now, and the ranges at the eclipse limits. Read-only: banning is left to `monerod`'s own console. |
 | F · Traffic | Download and upload now, and the last 15 minutes. |
 | G · History | Connections, mempool and traffic over 15 min, 1 h, 6 h or 24 h, kept for 24 h. |
 | H · Mempool | Transactions waiting, how long they've waited, double spends. |
 | I · Log | Things that changed, newest first, including what `monerod`'s own log reports (reorgs, bans, errors). |
-| J · Computer | The `monerod` process (CPU, memory, disk, the flags it runs with, "restart to use the new version"), CPU temperature, power and battery, memory, the drive holding the chain, the network link and the Tor proxy. |
 | K · System | Monero version, uptime, network rules version, bans, fees, disk space. |
 | L · Black marble watch | What a new transaction's 16-member ring works like if one sender made the recent surge of new outputs, drawn as 16 dots, and the last 30 days of new outputs against a usual day. |
 
@@ -131,10 +128,11 @@ again while it runs just brings its window back.
 | stays blank on Ubuntu 24.04, and the terminal says `bwrap: setting up uid map: Permission denied` | see [Ubuntu 24.04](#ubuntu-2404) below |
 | says the app's window port is in use | another copy has port 18200: stop it with Ctrl+C in its terminal, or start with `--port 18201` |
 
-On the first start it finds your node by itself: it reads the running
-`monerod`'s own flags and config file for its unrestricted RPC port and its log
-file. If it finds more than one `monerod`, or none, open Settings → Data source
-→ FIND MY NODE.
+On the first start it reads the node at `http://127.0.0.1:18081`, `monerod`'s
+own default RPC address, and its log at `~/.bitmonero/bitmonero.log`. If yours
+are somewhere else (`monerod`'s `--rpc-bind-port`, `--log-file` or
+`--data-dir`), put them in Settings → Data source and Settings → Node's log,
+then SAVE.
 
 What to expect:
 
@@ -145,9 +143,9 @@ If something's off:
 
 | What the screen says | What it means | What to do |
 |---|---|---|
-| THE NODE ISN'T ANSWERING | Nothing answered at the RPC address in Settings. | Check the node is running. It takes a minute or two to answer after a restart. Settings → Data source → FIND MY NODE shows where it listens. |
-| THIS IS A RESTRICTED RPC PORT (badge shows LIMITED) | The address points at a restricted port, which hides peers, bans and disk space. | Settings → Data source → FIND MY NODE, then USE THIS on the unrestricted one, then SAVE. |
-| NEEDS A LOGIN (in FIND MY NODE) | `monerod` runs with `--rpc-login`. | Type the user and password in Settings → Data source. |
+| THE NODE ISN'T ANSWERING | Nothing answered at the RPC address in Settings. | Check the node is running. It takes a minute or two to answer after a restart. If it listens somewhere else, put that address in Settings → Data source (TEST CONNECTION tries it). |
+| THIS IS A RESTRICTED RPC PORT (badge shows LIMITED) | The address points at a restricted port, which hides some readings (see [A restricted RPC port](#a-restricted-rpc-port)). | To see everything, put the node's unrestricted port in Settings → Data source, then SAVE. |
+| THE NODE ISN'T ANSWERING · THE NODE WANTS A LOGIN | `monerod` runs with `--rpc-login`. | Type the user and password in Settings → Data source. |
 
 **Get updates later:**
 
@@ -185,10 +183,10 @@ Memstara never turns WebKitGTK's sandbox off, and you shouldn't either.
 
 Memstara can read a node running somewhere else: a Raspberry Pi, a home
 server, another PC. It talks to the node only through RPC, so everything RPC
-answers works the same. What it can't see is that other computer itself (its
-CPU temperature, memory, drive and the `monerod` process), so the COMPUTER
-screen says NODE ON ANOTHER COMPUTER instead of showing dials, and the log
-views stay empty unless you point Settings → Node's log at a copy.
+answers works the same. `monerod`'s log is a file on that other computer, so
+the log views stay empty unless you point Settings → Node's log at a copy or a
+mounted folder. While the RPC address isn't on this computer, Memstara doesn't
+read the log at the default place, since it may be another node's.
 
 The node's unrestricted RPC port can change the node (ban peers, stop it), so
 don't open it to your network. Reach it through an SSH tunnel instead, which
@@ -199,9 +197,11 @@ ssh -N -L 18081:127.0.0.1:18081 you@node-computer
 ```
 
 Leave that running (or use `autossh` to keep it up), and set Settings → Data
-source → Node RPC address to `http://127.0.0.1:18081`. Memstara notices the
-port is an SSH tunnel and treats the node as remote. If a node already runs on
-this computer on 18081, pick another local port, for example
+source → Node RPC address to `http://127.0.0.1:18081`. Through a tunnel the
+address is on this computer, so Memstara can't tell the node is elsewhere:
+point Settings → Node's log at a copy of the node's log, or the log views show
+whatever is at the default place here. If a node already runs on this
+computer on 18081, pick another local port, for example
 `-L 18091:127.0.0.1:18081` and `http://127.0.0.1:18091`.
 
 If you do bind the node's RPC to your local network instead
@@ -211,8 +211,22 @@ If you do bind the node's RPC to your local network instead
 once in the log.
 
 A Raspberry Pi with a desktop can also run Memstara itself (Raspberry Pi OS is
-Debian-based, so the Debian packages above apply, and its CPU temperature
-sensor is read), but that hasn't been tested yet.
+Debian-based, so the Debian packages above apply), but that hasn't been
+tested yet.
+
+### A restricted RPC port
+
+A restricted port (`monerod --restricted-rpc`, or the second port that
+`--rpc-restricted-bind-port` adds) is a safety option: `monerod` itself
+refuses any change on it, whoever asks. Memstara works with one and shows
+LIMITED on the badge, but `monerod` doesn't answer every read there, so these
+stay empty: the peers and their counts (the NETWORK screen, panels C and D),
+traffic (the TRAFFIC screen), bans, sync details while it syncs, the node's
+uptime and version, and the disk space left. The commands that read the same
+things (`print_cn`, `print_pl`, `print_pool`, `bans`, `banned`, `sync_info`
+and a few more) don't work there either. To see everything, use the
+unrestricted port (through an SSH tunnel, as above, when the node is on
+another computer).
 
 ## Commands
 
@@ -229,20 +243,13 @@ takes at most 1,000 blocks at a time (the console has no limit).
 
 ## Reads beyond RPC
 
-Some things about the node aren't in any RPC answer, so the dashboard reads
-them from the computer itself, read-only (Settings → Computer reads turns this
-off):
-
-- `monerod`'s log file: reorgs, blocks that lost a race, bans as they happen,
-  errors and warnings.
-- The `monerod` process (`/proc`): CPU, memory, disk reads and writes, the
-  flags it was started with (passwords hidden), and whether its program file
-  was replaced since it started (an update waiting for a restart).
-- Each peer's round trip and resent packets (the `ss` tool). Tor and I2P peers
-  are left out, since their delay is Tor's, not theirs.
-- The computer (`/sys`, `/proc`): CPU temperature, power and battery, memory,
-  how busy the drive holding the chain is, the network link the node's
-  peer-to-peer port is bound to, and whether the Tor proxy is listening.
+Some things about the node aren't in any RPC answer, so the dashboard also
+reads `monerod`'s own log file, read-only (Settings → Node's log says where it
+is): reorgs, blocks that lost a race, bans as they happen, errors and
+warnings. That's all it reads besides RPC: nothing about the computer itself.
+(Privacy mode looks up this computer's name, your user name, your real name
+and your home folder, only to hide them. When the window's packages are
+missing, it reads `/etc/os-release`, only to print the right install command.)
 
 Not read: the chain database itself (RPC already serves what's in it, and its
 layout changes between Monero versions), the ZMQ feed (with the node read every second,
@@ -273,7 +280,7 @@ it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer
 ## For developers
 
 - `docs/DESIGN.md`: the data contract between the server and the screens,
-  the RPC calls and why, alert rules, local reads, commands and
+  the RPC calls and why, alert rules, `monerod`'s log, commands and
   settings.
 - `docs/STYLE.md`: look and wording rules.
 - `memstara/`: the server (Python standard library only) and the app window
@@ -283,7 +290,7 @@ it would only show new blocks a moment sooner) and `p2pstate.bin` (the same peer
 - Tests: `python3 -m unittest discover -s tests -v` (Python 3.10 or newer,
   nothing to install). They run against
   `tests/fake_monerod.py`, a test-only stand-in that answers with recorded
-  `monerod` replies, and against fake `/proc` and `/sys` trees.
+  `monerod` replies.
 
 ## Credits
 

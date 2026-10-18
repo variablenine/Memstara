@@ -12,13 +12,15 @@ method to its handler. "hidden on a restricted port" marks the ones monerod only
 an unrestricted RPC port (the _IF(..., !m_restricted) lines there).
 
 Supports HTTP Digest login (monerod --rpc-login). Errors come back as RpcError with a
-short plain-language summary; the login never appears in any message.
+short plain-language summary; the login never appears in any message. same_rpc and
+on_this_computer only look at RPC addresses (nothing is sent).
 """
 
 from __future__ import annotations
 
 import hashlib
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -106,6 +108,40 @@ def _clean(s, limit=120):
     s = str(s)
     s = "".join(ch for ch in s if ch >= " ")
     return s[:limit]
+
+
+LOOPBACK = ("127.0.0.1", "::1", "localhost")
+
+
+def _rpc_target(url: str):
+    parts = urlsplit(url or "")
+    try:
+        port = parts.port
+    except ValueError:
+        port = None
+    return (parts.hostname or "").lower(), port or (443 if parts.scheme == "https" else 80)
+
+
+def same_rpc(a: str, b: str) -> bool:
+    """Whether two RPC URLs are the same node's: same scheme, host and port (127.0.0.1, ::1
+    and localhost count as the same host)."""
+    (ha, pa), (hb, pb) = _rpc_target(a), _rpc_target(b)
+    return (urlsplit(a or "").scheme.lower() == urlsplit(b or "").scheme.lower() and pa == pb
+            and (ha == hb or (ha in LOOPBACK and hb in LOOPBACK)))
+
+
+def on_this_computer(url: str) -> bool:
+    """Whether an RPC URL's host is this computer: its loopback (127.0.0.0/8, ::1 or localhost),
+    or 0.0.0.0 or ::, which Linux takes as this computer too. Any other host may be another
+    computer's, so the node counts as possibly elsewhere."""
+    host, _ = _rpc_target(url)
+    if host == "localhost":
+        return True
+    try:
+        a = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return a.is_loopback or a.is_unspecified
 
 
 def _parse_challenges(values):

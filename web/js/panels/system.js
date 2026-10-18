@@ -1,4 +1,4 @@
-// I · System: version, uptime, bans, peer lists, fees, limits, disk.
+// K · System: version, uptime, bans, peer lists, fees, limits, disk.
 import { $, el, setText, setData, syncKV } from "../dom.js";
 import * as f from "../fmt.js";
 

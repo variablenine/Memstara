@@ -5,15 +5,15 @@ and the tests (`tests/`). If code and this file disagree, fix one of them.
 
 ## Goals
 
-- A desktop app for one Monero node, on the node's own machine, in its own
-  window: never a browser, no address bar, no tabs. The window (GTK 4 with
-  WebKitGTK) draws the screens in `web/`, and their data comes from the app's
-  own server on `127.0.0.1`, which answers only that window (see **The app
-  window**).
+- A desktop app for one Monero node, on the node's own machine or one that
+  reaches it over the network, in its own window: never a browser, no address
+  bar, no tabs. The window (GTK 4 with WebKitGTK) draws the screens in `web/`,
+  and their data comes from the app's own server on `127.0.0.1`, which answers
+  only that window (see **The app window**).
 - **Monero itself is never modified.** The dashboard only talks to `monerod`
-  through its public JSON-RPC interface, plus read-only looks at the machine
-  it runs on (see **Local reads**). Updating Monero never needs a dashboard
-  change unless Monero changes its RPC.
+  through its public JSON-RPC interface, plus a read-only look at its log
+  file (see **monerod's log: what RPC can't show**). Updating Monero never
+  needs a dashboard change unless Monero changes its RPC.
 - **Generic.** It works with any `monerod` on Linux and assumes nothing about
   the user's own scripts, services or network. It loads no code from outside
   `memstara/` and `web/`.
@@ -46,21 +46,20 @@ shows that copy's window and exits. Otherwise this copy:
 
 1. Loads settings from `$XDG_CONFIG_HOME/memstara/settings.json`
    (default `~/.config/memstara/settings.json`), creating it with
-   defaults on first run (file mode 0600, folder 0700). Every save sets a
+   defaults on first run (file mode 0600, folder 0700), so a first run reads
+   the node at `http://127.0.0.1:18081`, monerod's own default RPC address,
+   until another one is typed in Settings. Every save sets a
    folder that was already there to 0700 too, when it's the user's own and
    not the home folder, a filesystem root or a sticky folder like `/tmp`.
-2. On a first run (the settings file had no `source.rpc_url`), looks for the
-   running `monerod` (see **Finding the node**) and saves its address and log
-   file when exactly one is usable.
-3. Starts one **poller** thread that reads the node every
-   `source.refresh_s` seconds (and this computer every `local.every_s`; both
-   every second by default), runs the alert rules, records
+2. Starts one **poller** thread that reads the node, and the lines monerod's
+   log gained, every `source.refresh_s` seconds (every second by default),
+   runs the alert rules, records
    history and events, and stores the latest snapshot. The window only ever
    reads that stored snapshot, so it never adds load on the node, and it gets
    each new one the moment the poll that made it ends (see **The snapshot**).
-4. Serves the screens and the API on `127.0.0.1:<server.port>` (default
+3. Serves the screens and the API on `127.0.0.1:<server.port>` (default
    18200), with a new window key (see **HTTP API and safety rules**).
-5. Opens the window (not with `--background`).
+4. Opens the window (not with `--background`).
 
 Closing the window stops the app (it saves the history first, without waiting
 more than 2 seconds for a reading still under way, since at logout the desktop
@@ -242,6 +241,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
 {
   "v": 1,
   "generated": 1759700000,
+  "t": 1759700000.123,                 // when this poll started, to the millisecond
   "level": "ok",                       // "ok" | "warn" | "bad": worst active alert
   "source": {
     "mode": "live",                    // always "live"
@@ -252,7 +252,6 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
     "restricted": false,               // true = pointed at a restricted port
     "last_ok": 1759700000,             // last time the node answered
     "poll_s": 1,                       // source.refresh_s
-    "host_name": "node-box",           // the machine the dashboard runs on
     "dashboard_version": "0.1.0",
     "bootstrap": null                  // while monerod passes reads on to its bootstrap node: that
                                        // node's address (see "Facts checked"), else null
@@ -268,12 +267,13 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
     "sync_pct": 100.0,
     "top_hash": "9f3c…",
     "last_block_time": 1759699900,     // timestamp of the top block
-    "last_block_age_s": 100,           // generated - last_block_time, floored at 0
+    "last_block_seen": 1759699905.2,   // when the dashboard saw the top block arrive, else null
+    "last_block_age_s": 94,            // generated - last_block_seen (else last_block_time), floored at 0
     "difficulty": 650000000000,
     "hashrate": 5416666666,            // difficulty / 120
     "out_peers": 22,                   // public (clearnet) outgoing, from get_info
-    "out_wanted": 32,                  // thresholds.out_wanted if above 0, else the node's --out-peers, else 12
-    "out_wanted_from": "node",         // "setting" | "node" | "default"
+    "out_wanted": 32,                  // thresholds.out_wanted if above 0, else monerod's default of 12
+    "out_wanted_from": "setting",      // "setting" | "default"
     "in_peers": 31,
     "tor_out": 3,                      // outgoing .onion peers; null if Tor sending looks off
     "rpc_connections": 2,
@@ -328,9 +328,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
        "sent_bytes": 98000000,         // send_count
        "recv_idle_s": 4,               // recv_idle_time: seconds since the peer last sent anything
        "send_idle_s": 14,              // send_idle_time
-       "pruned": false,                // pruning_seed != 0
-       "rtt_ms": 42.0, "retrans": 0}   // kernel round trip and retransmits (see Local reads);
-                                       // null for Tor/I2P, when local reads are off, or not matched
+       "pruned": false}                // pruning_seed != 0
     ],
     "spread": {                        // biggest cluster each way (see the spread_out / spread_in alerts)
       "out16": {"net": "100.66", "n": 2, "ips": ["100.66.1.9", "100.66.4.2"]},
@@ -359,11 +357,12 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
   "lamps": [                           // the annunciator wall: the 12 lamps in this order
     {"id": "node", "label": "NODE", "state": "ok", "value": "ANSWERING", "since": null}
   ],                                   // since = when it last left ok/off, null while ok/off
-  "host": { },                         // local reads, see "Local reads"; null when off
   "events": [                          // newest first, at most 200
     {"t": 1759699900, "level": "info", "kind": "block", "text": "New block 3,512,344 · 41 txs · 98 kB",
      "id": 812}                        // one up from the event before (since the dashboard started)
   ],
+  "hist": {"t": 1759699995, "step": 5, "out": 22, "in": 31, ...},  // the history row still filling,
+                                       // this reading included (see **History**)
   "clock_style": "12h",                // how its clock times are written: "12h" or "24h", "-utc" added in privacy mode
   "seq": 1234                          // this snapshot's number (see above)
 }
@@ -387,7 +386,7 @@ short plain-language reading (at most about 14 characters, uppercase).
 | `restarts` | RESTARTS | 3+ restarts in an hour | RPC |
 | `spread_out` | ECLIPSE · OUT | 5+ outgoing from one network for 10 min | RPC |
 | `spread_in` | ECLIPSE · IN | 4+ incoming from one network for 10 min | RPC |
-| `tor` | TOR SENDING | Tor sending on but 0 Tor peers for 10 min | RPC, node flags |
+| `tor` | TOR SENDING | Tor sending on but 0 Tor peers for 10 min | RPC |
 | `flood` | BLACK MARBLE | a new 16-member ring works like under 11 / 8 members for 30 min | RPC |
 
 ### Alerts
@@ -410,20 +409,10 @@ Rules (thresholds are settings):
 | `spread_out` | warn | ≥ `out16_warn` 5 outgoing IPv4 peers in one x.y network | `grace.spread_min` 10 min | |
 | `spread_in` | warn | ≥ `in24_warn` 4 incoming IPv4 peers in one x.y.z network | `grace.spread_min` 10 min | |
 | `flood` | warn / bad | the black marble watch's estimate: a new transaction's 16-member ring works like fewer than `flood_warn` 11 / `flood_bad` 8 members (see **Black marble watch**) | `grace.flood_min` 30 min | |
-| `tor` | warn | `tor_sending` setting is `on` (or `auto` and: when the running node is found, it was started with `--tx-proxy tor,...`, read from its flags, see **Finding the node**; when it isn't found, Tor peers were seen since the node last started) and 0 outgoing Tor peers | `grace.tor_min` 10 min | |
-| `cpu_temp` | warn / bad | hottest CPU sensor ≥ 85 / 95 °C (185 / 203 °F) | 2 min | |
-| `memory` | warn | ≥ 90% of the computer's memory in use | 5 min | |
-| `power` | warn / bad | on battery / on battery with < 20% left | 1 min | |
+| `tor` | warn | `tor_sending` setting is `on` (or `auto` and Tor peers were seen in `get_connections` since the node last started) and 0 outgoing Tor peers | `grace.tor_min` 10 min | |
 
-The last three come from this computer's own readings (`host.computer`, see
-**Local reads: what RPC can't show**), not RPC, and have no settings: they are the limits the
-COMPUTER panel and dial draw. They go on while the node isn't answering, and
-pause (neither shown nor cleared) while local reads are off or failing. Their
-texts give temperatures in the `display.temp_unit` setting; under `auto` the
-server can't see the screens' language, so it gives both, °F first.
-
-While the node isn't answering, only `node_down` and the computer's own alerts
-are raised (other RPC rules pause rather than firing on missing data).
+While the node isn't answering, only `node_down` is raised (the other rules
+pause rather than firing on missing data).
 `flood` also pauses while the watch has no estimate (the node syncing, using a
 bootstrap node, or the year still being read), and keeps how long it has been
 under its limits: the estimate moves slowly, so one that comes back still under
@@ -441,7 +430,7 @@ heights found in one poll.
 `{"t", "level": "info"|"warn"|"bad"|"ok", "kind", "text"}`. Kinds: `block`,
 `reorg`, `peer_in`, `peer_out`, `peer_gone`, `alert`, `clear`, `restart`,
 `source`, `settings`, `sync` and
-`log` (lines from monerod's log, see **Local reads**). Peer join/leave events
+`log` (lines from monerod's log, see **monerod's log as events**). Peer join/leave events
 are summarised ("3 joined · 1 left") instead of one line each: the first change
 after a quiet spell at once, then at most one event per 5 seconds, and a peer
 that leaves and comes back in between isn't counted. Kept
@@ -593,13 +582,12 @@ wasn't answering):
 ```json
 {"window": 3600, "step": 10, "t": [1759696400, ...],
  "out": [22, ...], "in": [31, ...], "tor": [3, ...], "pool": [34, ...],
- "rate_in": [60000, ...], "rate_out": [140000, ...], "latency": [14, ...],
- "cpu_temp_c": [61.0, ...], "node_cpu_pct": [7.5, ...]}
+ "rate_in": [60000, ...], "rate_out": [140000, ...], "latency": [14, ...]}
 ```
 
-`cpu_temp_c` and `node_cpu_pct` come from the local reads (`null` when they
-are off or unknown). A history file saved before a field existed still loads;
-that field is `null` for the older samples.
+The file's columns are matched by name, so a history file from a version with
+other fields still loads: a field it doesn't have is `null` for the older
+samples, and one that is no longer kept is left out.
 
 ## Settings
 
@@ -612,8 +600,8 @@ answers with the same shape as GET (or `400 {"errors": {"key": "reason"}}`).
 section's defaults.
 
 The file carries `"format": 2`. A file without it is from before reads every
-second: when it loads, `source.refresh_s` 5 and `local.every_s` 10 (the old
-defaults) become 1, once, and the file is saved with `"format": 2`. Any other
+second: when it loads, `source.refresh_s` 5 (the old default) becomes 1,
+once, and the file is saved with `"format": 2`. Any other
 value someone picked stays, and everything else in the file is written back as
 it was (keys nobody knows are dropped at the next save).
 
@@ -624,12 +612,12 @@ Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 
 | key | type | default | notes |
 |---|---|---|---|
-| `source.rpc_url` | url | `http://127.0.0.1:18081` | http/https only; on first run, filled from FIND MY NODE when exactly one unrestricted monerod is found |
+| `source.rpc_url` | url | `http://127.0.0.1:18081` | http/https only; the default is monerod's own default RPC address |
 | `source.rpc_user` | text | `""` | only if monerod has `--rpc-login` |
 | `source.rpc_password` | password | `""` | |
 | `source.refresh_s` | choice 1/2/5/10/30 | 1 | seconds between reads of the node |
 | `source.timeout_s` | int 2-30 | 8 | |
-| `thresholds.out_wanted` | int 0-1000 | 0 | 0 = the node's own: `--out-peers` (flag or config file), else monerod's default of 12 |
+| `thresholds.out_wanted` | int 0-1000 | 0 | 0 = monerod's default of 12; if monerod runs with `--out-peers` (or it was changed with monerod's own `out_peers` command), that number goes here |
 | `thresholds.low_peers` | int 0-1000 | 8 | |
 | `thresholds.no_block_warn_min` | int 5-1440 | 30 | |
 | `thresholds.no_block_bad_min` | int 5-1440 | 60 | must be > warn |
@@ -660,16 +648,14 @@ Schema entries: `{"key": "thresholds.low_peers", "section": "thresholds",
 | `display.density` | choice comfortable/compact | `comfortable` | |
 | `display.text_scale` | choice 90/100/115/130 | 100 | percent |
 | `display.keys` | bool | false | keyboard shortcuts; off by default so a stray key press can't trigger them |
-| `display.temp_unit` | choice auto/f/c | `auto` | auto: °F when the computer's language is en-US (WebKit's `navigator.language`, from the locale), °C otherwise |
+| `display.privacy` | bool | false | privacy mode; only `POST /api/privacy` changes it (see **Privacy mode**) |
 | `panels.<id>` | bool | true | show or hide each panel (ids below) |
 | `chain.blocks_shown` | int 20-200 | 60 | |
-| `node.log_path` | path | `~/.bitmonero/bitmonero.log` | monerod's own log; on first run, from FIND MY NODE. Left at the default, the log file the running node was found writing (its `--log-file` or data dir) is read instead |
-| `local.enabled` | bool | true | computer reads (see Local reads) |
-| `local.every_s` | choice 1/5/10/30 | 1 | |
+| `node.log_path` | path | `~/.bitmonero/bitmonero.log` | monerod's own log (its `--log-file`, else `bitmonero.log` in its data folder), read-only. Left at the default while the RPC address isn't on this computer, it isn't read (see **An RPC address not on this computer**) |
 | `server.port` | int 1024-65535 | 18200 | the window's local port; takes effect the next time the app starts |
 
 Panel ids: `lamps`, `chain`, `peers`, `route`, `bans`, `traffic`,
-`history`, `mempool`, `events`, `computer`, `system`, `flood`.
+`history`, `mempool`, `events`, `system`, `flood`.
 
 ## HTTP API and safety rules
 
@@ -685,7 +671,6 @@ Panel ids: `lamps`, `chain`, `peers`, `route`, `bans`, `traffic`,
 | `GET /api/commands` | the command list, see Commands |
 | `POST /api/command` | runs one command, see Commands |
 | `GET /api/node-log` | the last lines of monerod's log (guarded) |
-| `GET /api/discover` | the running `monerod`s and their settings, see Finding the node (guarded) |
 | `GET /api/health` | `{"ok": true, "version": "<dashboard version>"}` |
 | `POST /api/privacy` | `{"on": true}` turns privacy mode on at once; `{"on": false, "confirm": "SHOW"}` turns it off (without the word: `400` with `field: "confirm"`). See Privacy mode |
 
@@ -710,10 +695,9 @@ Safety rules the server enforces:
   The hidden `--debug` can print it (WebKit starts some console lines with
   the page's address). (`App(key=None)`, in the tests, turns the check off;
   an empty key matches nothing.)
-- **Write guard (CSRF):** `PUT`/`POST`, `GET /api/node-log` and
-  `GET /api/discover` (they read files and other processes on this computer)
-  need the header `X-Memstara: 1` and, when an `Origin` header is present, it
-  must match the Host (a `Sec-Fetch-Site: cross-site` is refused too);
+- **Write guard (CSRF):** `PUT`/`POST` and `GET /api/node-log` (it reads a
+  file on this computer) need the header `X-Memstara: 1` and, when an
+  `Origin` header is present, it must match the Host (a `Sec-Fetch-Site: cross-site` is refused too);
   otherwise `403`. No CORS headers are ever sent.
 - Static files are served only from a list built at start-up by walking `web/`
   (no path joins from the URL), with
@@ -746,18 +730,20 @@ block, but no token can be turned back into its value. Hidden:
 |---|---|
 | `ip`, `ip6` | IPv4 and IPv6 addresses (not loopback or 0.0.0.0), and monerod's number form of one |
 | `n16`, `n24`, `net` | ranges, keeping their shape: `⟦n16⟧.0.0/16`, `⟦n24⟧.0/24`, `⟦n24⟧.x`, `⟦ip⟧/32` |
-| `port` | every port key, "port 47213" in text, a port after a hidden address (`⟦ip⟧:⟦port⟧`), and this node's own ports anywhere once learned (monerod's `--p2p-bind-port` flags) |
+| `port` | every port key, "port 47213" in text, a port after a hidden address (`⟦ip⟧:⟦port⟧`), and a port after 0.0.0.0 or :: (`0.0.0.0:⟦port⟧`, `[::]:⟦port⟧`, `:::⟦port⟧`, also `[::ffff:0.0.0.0]:⟦port⟧`) with the address shown: that's how monerod writes where it listens ("Binding (IPv4) on 0.0.0.0:…" in its log), so the port is your node's own p2p port |
 | `tor`, `i2p` | onion and I2P addresses |
-| `host`, `user`, `name` | this computer's name, your user name and your real name, as whole words |
+| `host`, `user`, `name` | this computer's name, your user name and your real name, as whole words, and the node's computer's name when its RPC address gives one (`node.lan:18081`) |
 | `login` | the login in an address (`http://me:pw@…`) |
 | `hex`, `tx` | any run of 64 or more hex digits (transaction ids, key images, a whole transaction in a log line), except block hashes under their own keys |
 | `id` | peer ids |
 | `addr` | Monero addresses |
 | `mac` | hardware addresses |
 
-Your home folder becomes `~`. Every string goes through the patterns, so a field added
-later still has its addresses, names and paths caught; the key rules
-cover what a pattern can't recognise alone (a bare port number, a range written "1.2").
+Your home folder becomes `~`. This computer's name, your user name, your real name and
+your home folder are read (from the system, at start) only to hide them. Every string
+goes through the patterns, so a field added later still has its addresses, names and
+paths caught; the key rules cover what a pattern can't recognise alone (a bare port
+number, a range written "1.2").
 A waiting transaction your node hasn't passed on
 yet is left out of the mempool list (only your node has it, so it could be yours), and
 the count of those is dropped. The snapshot gets `"privacy": true`.
@@ -773,7 +759,7 @@ already and carry fractions of a second).
 **Locked while it's on:** settings that hold an address, a folder or a login (types
 `text`, `url`, `path`, `password`) show their hidden form, read-only, and their sections
 can't be reset; any value from the window with a token in it is refused; TEST
-CONNECTION and USE THIS refuse hidden values.
+CONNECTION refuses hidden values.
 
 **The window** (`privacy.js`) draws each token as a run of block glyphs in the shape of
 what it hides (four groups for an address, five characters for a port), the same glyphs
@@ -792,10 +778,11 @@ SHOW first. A window that gets a snapshot whose `privacy` doesn't match its own 
 switch was used in another window) reloads before drawing it.
 
 Not hidden: the counts and timings (how many peers, from how many ranges, when blocks
-came), block heights and hashes, fees, the RPC address on this computer (`127.0.0.1`),
-and anything you type yourself, as you type it. A transaction you send shows up as a
-new dot on the mempool screen once your node passes it on, so with someone watching the
-screen at that moment, the timing could point at it.
+came), block heights and hashes, fees, loopback addresses and their ports (the RPC
+address on this computer, `127.0.0.1:18081`), and anything you type yourself, as you
+type it. A transaction you send shows up as a new dot on the mempool screen once your
+node passes it on, so with someone watching the screen at that moment, the timing could
+point at it.
 
 ## Commands (monerod's read-only console commands)
 
@@ -878,185 +865,43 @@ file (`403`), and never blocks on a pipe. It also refuses (`403`) a file
 inside the dashboard's own settings or state folder
 (`~/.config/memstara`, `~/.local/state/memstara`, or
 their `$XDG_*` places) and one whose name (after following links) has no
-`.log`, unless it is the `log_file` **Finding the node** found for the node
-the dashboard reads ("X isn't a log file (its name has no .log), so it isn't
-read."). monerod's log as events (`logevents.py`) follows the same rules. Any
+`.log` ("X isn't a log file (its name has no .log), so it isn't read.").
+monerod's log as events (`logevents.py`) follows the same rules. Any
 other source is `400`
 ("source must be monerod"), and a missing file `404` ("monerod's log isn't
-at PATH.").
+at PATH."). While the RPC address isn't on this computer, the default path is
+`404` too ("The node's RPC address isn't on this computer, so the log at the
+default place may be another node's. To read the node's own, set monerod's log
+in Settings."; see **An RPC address not on this computer**).
 
-## Local reads: what RPC can't show
+## monerod's log: what RPC can't show
 
-Nothing here changes anything either. Reads also come from the computer itself, because some things about the node aren't in any RPC
-answer. Everything here is read-only, Linux-only (`/proc`, `/sys`, iproute2),
-runs as the user, and degrades to `null` with a short reason when a source is
-missing. `memstara/host.py` (finding the node, process, peers' round trips,
-computer, network link) and `memstara/logevents.py` (log events) collect it;
-the poller calls them every `local.every_s` seconds (default 1, timed from
-the last read, so with the node read every 5 s and this every 10 s, it reads
-every other poll) and puts the result in the snapshot. Each rate is timed by when its
-counter was read (the poll's start moved on by a clock that never jumps), not by when
-the poll started: the node's answers before it take a different time each poll, which
-would make a rate read every second jump about. With `local.enabled` off none of it runs: `snapshot.host` is
-`null`, every peer's `rtt_ms` / `retrans` is `null`, no log events, no
-`cpu_temp_c` / `node_cpu_pct` in history, and the node's flags aren't read
-(so the `tor` alert's `auto` rule goes without them).
+Some things about the node aren't in any RPC answer (blocks replaced and
+blocks that lost a race the moment monerod sees them, bans, errors), so the
+dashboard also reads monerod's own log file, `node.log_path`. That's all it
+reads besides RPC and its own files: nothing about the computer itself
+(privacy mode only looks up this computer's name, your user name, your real
+name and your home folder, to hide them, and when the window's packages are
+missing, `/etc/os-release` is read to print the right install command).
+The log is only read, as the user, and one that can't be read leaves a short reason instead. Every poll, `memstara/logevents.py` reads
+the lines it gained and the poller turns them into events; the command drawer
+shows its last lines (see **monerod's log (read-only)**).
 
-### Finding the node (`GET /api/discover`, guarded)
+### An RPC address not on this computer
 
-So nobody has to know their own ports, the core reads the running
-`monerod`'s settings the same way `monerod` does:
-
-- Candidates: processes of the user's own uid whose `/proc/<pid>/comm` is
-  `monerod` (other users' processes can't be read anyway).
-- Flags from `/proc/<pid>/cmdline`, then the config file (`--config-file`, or
-  `~/.bitmonero/bitmonero.conf` if it exists; `key=value` lines, `#`
-  comments); a flag on the command line wins over the file, as in monerod.
-  The default config file stays at `~/.bitmonero/bitmonero.conf` even when
-  `--data-dir` points elsewhere (src/daemon/command_line_args.h), but the
-  default log is `bitmonero.log` in the data dir, and a bare `--log-file`
-  name is in the data dir too (src/daemon/main.cpp).
-- Network: `--testnet` / `--stagenet` change the default ports (28081 /
-  38081) and put the default data dir, config file and log one folder
-  deeper (`~/.bitmonero/testnet/...`, `~/.bitmonero/stagenet/...`).
-- Main RPC: `--rpc-bind-ip` (default 127.0.0.1), `--rpc-bind-port` (default
-  18081). It's restricted only with `--restricted-rpc`.
-  `--rpc-restricted-bind-port` adds a second, restricted port.
-  `--rpc-login` means a user and password are needed (the dashboard never
-  copies the password from the command line; you type it in Settings).
-  monerod also takes the start of an option's name when only one option
-  starts that way, so `--rpc-logi` (5 letters or more) counts as `--rpc-login`.
-- `--data-dir` (default `~/.bitmonero`), `--log-file` (default
-  `<data dir>/bitmonero.log`), `--p2p-bind-ip` / `--p2p-bind-ipv6-address`
-  (the node's own addresses), `--tx-proxy`
-  (Tor or I2P sending is on; a value starting `tor,` means Tor sending, so the
-  `tor` alert applies without guessing, and an I2P-only node has no `tor`
-  alert).
-
-Answer: `{ok, error, found: [{pid, exe, started, nettype, rpc_url,
-restricted, login_needed, restricted_rpc_url, data_dir, log_file, p2p_bind:
-[ip], tx_proxy: bool, tx_proxy_tor: bool}]}`. `tx_proxy` is any `--tx-proxy`;
-`tx_proxy_tor` only a `--tx-proxy tor,...`.
-
-First run (no `source.rpc_url` in the settings file yet): if exactly one
-candidate has an unrestricted RPC port, its `rpc_url` and `log_file` are
-saved as `source.rpc_url` and `node.log_path`, and a line says so ("Found
-monerod (pid N): reading URL", plus "(it needs the RPC login in Settings)"
-with `--rpc-login`). Otherwise the defaults stay (`http://127.0.0.1:18081`,
-`~/.bitmonero/bitmonero.log`) and Settings → Data source has a FIND MY NODE
-button listing what it found.
-
-While running, the poller looks again at most once a minute, or sooner when
-the node's pid changes (a restart), and uses the entry for the node it reads
-(same pid, else the same RPC host:port, `localhost` and `127.0.0.1` counting
-as the same). From it: `p2p_bind` feeds the `ban` guard, `tx_proxy_tor` the `tor`
-alert's `auto` rule, `log_file` the log reads, and `data_dir` the disk read. `GET /api/discover` always
-looks afresh.
-
-### Which process is the node
-
-The `monerod` process whose listening socket is the RPC port in
-`source.rpc_url`: find the LISTEN entry for that host:port in `/proc/net/tcp`
-(or `tcp6`), take its inode, then scan `/proc/<pid>/fd/*` of the user's own
-processes for `socket:[inode]`. Other `monerod`s on the computer (a wallet
-app's own node, say) never match. Re-found when the pid stops existing.
-
-### A node on another computer
-
-Reading this computer only makes sense when the node runs on it. Before
-anything else, `host.py` checks where `source.rpc_url` points:
-
-- an IP address none of this computer's interfaces holds (`/proc/net/fib_trie`
-  "host LOCAL" entries and `/proc/net/if_inet6`; loopback and `0.0.0.0` are
-  this computer) is another computer;
-- a host name other than this computer's own (`socket.gethostname()`, short or
-  full, or with `.local`) is looked up (at most every 5 minutes; the RPC client
-  looks the same name up for every call anyway), and is another computer when
-  none of its addresses is this computer's. A name that doesn't resolve, or
-  address lists that can't be read, leave it read as this computer;
-- a loopback address whose port is held by `ssh`, `autossh`, `sshuttle`,
-  `socat` or `stunnel` (the process found as in "Which process is the node") is
-  a tunnel to another computer.
-
-Then nothing about this computer is read: `snapshot.host` is the empty shape
-with `"ok": false`, a plain-sentence `error`, and `"remote": {"how": "network"
-| "tunnel", "where": "host:port", "via": "ssh" | null}` (null when the node is
-here). The poller skips finding the node's process, reads monerod's log only from a
-`node.log_path` set by hand (a copy or a mounted folder; `/api/node-log` says
-why it can't otherwise), and writes `source` events once per place: that the
-node is elsewhere, and, without a tunnel, that plain `http` across a network
-can be read by others and that a node answering with no login can be changed
-by anyone who reaches it. The COMPUTER screen and panel J say NODE ON ANOTHER
-COMPUTER, calmly (it isn't a fault).
-
-### `snapshot.host` (null when local reads are off or not on Linux)
-
-```jsonc
-"host": {
-  "ok": true, "error": null, "every_s": 10,
-  "t": 1759700000.25,                  // when this reading was taken (shown again until the next one)
-  "proc": {                            // the monerod process
-    "pid": 4242, "name": "monerod", "exe": "/usr/local/bin/monerod",
-    "exe_replaced": false,             // /proc/<pid>/exe ends in " (deleted)": the binary on disk changed
-                                       // since it started (an update is waiting for a restart)
-    "started": 1759600000,             // from /proc/<pid>/stat starttime + btime
-    "cpu_pct": 7.5,                    // of one core, from utime+stime deltas between reads
-    "rss_bytes": 1900000000, "threads": 41, "open_files": 380,
-    "read_bytes": 123, "write_bytes": 456,          // /proc/<pid>/io totals
-    "read_rate": 1000, "write_rate": 2000,          // bytes/s between reads
-    "flags": ["--rpc-bind-port", "18081", "--out-peers", "32", ...]
-                                       // /proc/<pid>/cmdline; the value after --rpc-login,
-                                       // --bootstrap-daemon-login, --rpc-access-control-origins
-                                       // (or a start of one of them, 5 letters or more, as
-                                       // monerod takes) and any *password* or *login* flag is
-                                       // replaced with "••••"; a flag=value form is masked too,
-                                       // and so is user:password@ in any scheme://... value
-  },
-  "computer": {
-    "cpu_temp_c": 61.0,                // hottest /sys/class/thermal zone of type x86_pkg_temp,
-                                       // cpu*, acpitz or coretemp hwmon, else null
-    "throttle": {                      // is the CPU slowing itself down because of heat?
-      "source": "intel",               // "intel": /sys/devices/system/cpu/cpuN/thermal_throttle
-                                       // counters; "kernel": only "Processor" cooling devices
-                                       // in /sys/class/thermal; null: neither (nothing to show)
-      "now": false,                    // a counter changed since the last read, or a Processor
-                                       // cooling device has cur_state > 0; null when no source
-      "last_t": 1700000000,            // when this dashboard last saw one (null: not since it started)
-      "since_boot": 5,                 // slowdowns counted since the computer started (Intel only)
-      "speed_mhz": 2100, "max_mhz": 4500   // average scaling_cur_freq, highest cpuinfo_max_freq
-    },
-    "on_ac": true, "battery_pct": 87, "battery_state": "Charging",   // /sys/class/power_supply
-    "load1": 0.8, "cores": 8,
-    "mem_used_bytes": 6e9, "mem_total_bytes": 16e9,                  // /proc/meminfo (MemTotal - MemAvailable)
-    "uptime_s": 99999,                                                // /proc/uptime
-    "disk": {"device": "nvme0n1", "read_rate": 0, "write_rate": 0, "busy_pct": 3.0}
-                                       // the block device under the node's data dir (its --data-dir,
-                                       // else ~/.bitmonero; st_dev → /sys/dev/block/M:m),
-                                       // rates from /proc/diskstats deltas, busy from io_ticks
-  },
-  "bind_if": {                          // the interface holding the node's --p2p-bind-ip address
-    "name": "wg0", "kind": "vpn", "up": true, "address": "10.8.0.2",   // kind: "vpn" (tun/tap/WireGuard) or "other"
-    "rx_bytes": 1, "tx_bytes": 2, "rx_rate": 3, "tx_rate": 4   // /sys/class/net/<if>/statistics
-  },
-  "tor": {"socks_port": 9050,          // from the node's --tx-proxy tor,... flag, else Tor's default
-          "socks_listening": true},    // something listens on 127.0.0.1:<socks_port> (/proc/net/tcp)
-  "remote": null                       // the node runs elsewhere: {how, where, via}, see "A node on another computer"
-  // "proc": null with "proc_error": "<plain sentence>" when the node process isn't found
-}
-```
-
-History (`/api/history`) also carries `cpu_temp_c` and `node_cpu_pct` per
-sample (null when unknown), for the 15-minute charts in panel J.
-
-### Peer round trips (`peers.list[].rtt_ms`, `retrans`)
-
-`ss -tinH state established` (iproute2, on nearly every Linux system) gives the kernel's
-smoothed round-trip time and retransmit count for every TCP connection. Each
-clearnet peer from `get_connections` is matched by remote address and port
-(`get_connections` gives the peer's own remote port for incoming peers too,
-not the node's listening port: cryptonote_protocol_handler.inl). Tor and I2P peers go through
-the local Tor proxy, so their round trip is `null`. Run with a 3 s timeout;
-missing `ss` → every `rtt_ms` is `null` and `host.error` says so.
+The dashboard can't see where the node runs, only its RPC address. When the
+host in `source.rpc_url` isn't this computer (127.0.0.0/8, `::1`, `localhost`,
+or `0.0.0.0` and `::`, which Linux takes as this computer too; `on_this_computer`
+in `memstara/rpc.py`), the node may run on
+another computer, and the log at the default place may be another node's. So
+while `node.log_path` is still its default, monerod's log isn't read: no log
+events, and `/api/node-log` answers `404` with why. A path set by hand (a copy,
+or a mounted folder) is read as usual. `source` events say once per node that
+the RPC address isn't on this computer, that plain `http` across a network can
+be read by others (an SSH tunnel keeps it private, see the README), and, when
+the node answers with no login, that anyone who reaches its unrestricted port
+can change it (start monerod with `--rpc-login`). An SSH tunnel's near end is
+on this computer (`127.0.0.1`), so a node read through one counts as here.
 
 ### monerod's log as events (`logevents.py`)
 
@@ -1095,21 +940,17 @@ is not (category `blockchain`, INFO), so new blocks keep coming from RPC.
   transactions show up less than a second sooner.
 - **p2pstate.bin:** a binary archive of the same peer lists `print_pl` shows.
 
-Settings: `local.enabled` (bool, default true), `local.every_s` (choice
-1/5/10/30, default 1), and `panels.computer` (bool, default true) like the other
-panels.
-
 ## Screens (web/)
 
 One page with a tab bar under the top bar. Each tab is a screen; one shows at
 a time (`display.layout` "tabs"), or every screen stacks on one page ("page").
 The open screen is kept in the address (`#network`) and in the window's
-storage, so the app opens on it next time. Keys 1 to 8 switch screens when keyboard shortcuts are on. A tab shows
+storage, so the app opens on it next time. Keys 1 to 7 switch screens when keyboard shortcuts are on. A tab shows
 ▲ or ■ when an alert belongs to its screen (STATUS shows the worst of all), and
 that screen's centrepiece frame glows in the heads-up colour, or pulses in the
 problem colour.
 
-Each screen opens with its **centrepiece** ("hero", numbered 01 to 08), an
+Each screen opens with its **centrepiece** ("hero", numbered 01 to 07), an
 animated picture drawn from real readings, then the older lettered panels, in
 a responsive grid (three columns wide, two below 1400 px, one when narrow).
 
@@ -1120,9 +961,8 @@ a responsive grid (three columns wide, two below 1400 px, one when narrow).
 | 03 CHAIN | BLOCK STREAM: the last blocks as 3D boxes receding into the distance, sized by weight and spaced by the wait before each, with a ghost NEXT BLOCK and its timer; blocks replaced flash ▲ | B chain, K system, L black marble watch |
 | 04 MEMPOOL | TRANSACTION POOL: one dot per waiting transaction in bands by how long it has waited; dots drop in as they arrive and leave in a block-shaped sweep | H mempool |
 | 05 TRAFFIC | LIVE TRAFFIC: a scope of download and upload over 15 minutes, with the node's limits when they are near, and flow lanes whose dots speed up with the data | F traffic, G history |
-| 06 COMPUTER | GAUGES: dials for CPU temperature, monerod's CPU, memory, how busy the chain's drive is and disk free, each with its last 15 minutes where kept | J computer |
-| 07 BANS | BAN CLOCK: a clock with one ring per ban of 24 h or less, each draining as its time runs out; click one to find it in the ban list | E ban list |
-| 08 LOG | EVENT TIMELINE: lanes of what happened in the last hour (blocks, peers, the node, alerts, monerod's log, blocks replaced), with the newest typed out underneath | I log |
+| 06 BANS | BAN CLOCK: a clock with one ring per ban of 24 h or less, each draining as its time runs out; click one to find it in the ban list | E ban list |
+| 07 LOG | EVENT TIMELINE: lanes of what happened in the last hour (blocks, peers, the node, alerts, monerod's log, blocks replaced), with the newest typed out underneath | I log |
 
 **Centrepiece contract** (`web/js/heroes/index.js`): each module's default
 export is `create(body, env)` returning `{update(snap, now), show(), hide(),
@@ -1141,8 +981,8 @@ draw still pictures that update with each reading.
 The older panels, by letter:
 
 - **Top bar** (in the screens, under the window's header bar): dashboard
-  name and node name, overall status lamp (OK / HEADS-UP / PROBLEM), LIVE
-  badge with the RPC address, local clock, COMMANDS and SETTINGS buttons.
+  name with the network, the node's uptime and its version, overall status lamp (OK / HEADS-UP / PROBLEM), LIVE
+  badge with the RPC address, local clock, PRIVACY, COMMANDS and SETTINGS buttons.
   **Alerts strip** below it: active alerts, problems first. **Status bar** at
   the bottom: RPC address, answer time, poll.
 - **A · Lamp wall** (`lamps`): the 12 lamps. Lit in
@@ -1157,14 +997,13 @@ The older panels, by letter:
   angle comes from its network (so peers from the same company's servers stack
   up at the same angle), distance from the centre is how long it has been
   connected, filled = outgoing, ring = incoming, diamond = Tor. Clusters at or
-  over the eclipse limits are highlighted and named. Tooltips and the table
-  show each peer's round trip (`rtt_ms`, `retrans`). Each blip stays put from
+  over the eclipse limits are highlighted and named. Each blip stays put from
   one reading to the next and only moves as its connection ages, so one being
   read keeps its details; a reading without the list keeps the last one drawn,
   dimmed, for 3 s (as the node tree does). The table is filled only while open.
-- **D · Route** (`route`): other nodes → the network link the node's p2p port
-  is bound to, if any (from `host.bind_if`, titled VPN when it's a tun/WireGuard
-  interface) → your node → Tor and the dashboard.
+- **D · Route** (`route`): other nodes → your node → Tor sending and the
+  dashboard (with the RPC answer time), from the connection counts and the Tor
+  peers in `get_connections`.
 - **E · Ban list** (`bans`): the short bans (24 h or less left) with their
   time left, a count of the longer ones, and the ranges at the eclipse limits
   right now. Read-only: banning is left to `monerod`'s own console. A button
@@ -1176,16 +1015,8 @@ The older panels, by letter:
   peers, mempool, traffic.
 - **H · Mempool** (`mempool`): waiting transactions, size, oldest, double
   spends, how long they've waited.
-- **I · Log** (`events`, two wide): the event list, newest first; lines from
+- **I · Log** (`events`, full width): the event list, newest first; lines from
   monerod's log carry a MONEROD LOG tag.
-- **J · Computer** (`computer`, two wide): from `snapshot.host`. The monerod
-  process (CPU, memory, disk writes, a 15-minute CPU chart, PID and running
-  time, program path with "replaced on disk, restart to use the new one",
-  threads, open files, the flags it was started with) and the computer (CPU
-  temperature with a 15-minute chart, power and battery, memory and
-  chain-drive meters, CPU load, uptime, network link and traffic, Tor proxy).
-  Temperature colours are display-only: heads-up from 85 °C, problem from
-  95 °C; `display.temp_unit` picks °F or °C.
 - **K · System** (`system`): version, uptime, disk free / blockchain size,
   bans, network rules version, fee estimate, RPC answer time.
 - **L · Black marble watch** (`flood`, full width): what a new 16-member ring
@@ -1200,6 +1031,6 @@ The older panels, by letter:
   tables; plus the last lines of monerod's log.
 
 The settings menu slides in from the right and is generated from the settings
-schema, with TEST CONNECTION and FIND MY NODE in the data source section.
+schema, with TEST CONNECTION in the data source section.
 
 Visual rules: see `docs/STYLE.md`.

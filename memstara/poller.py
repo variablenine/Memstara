@@ -1,10 +1,8 @@
 """The poller: one thread that reads the node, runs the alert rules, records history
 and events, and keeps the latest snapshot. The app window only ever reads that snapshot.
 
-Each poll: RPC (every source.refresh_s), local reads of this computer and monerod's log
-(every local.every_s, see host.py and logevents.py), finding the node's own settings
-(host.discover, at most once a minute or when its pid changes), then the alert rules, the
-lamps and history. The black marble
+Each poll: RPC (every source.refresh_s), the lines monerod's log gained since the last
+poll (logevents.py), then the alert rules, the lamps and history. The black marble
 watch (flood.py) reads a year of output counts once, a part per poll, then only the
 newest blocks.
 
@@ -21,22 +19,20 @@ they find it (monerod's create_block_template sets the timestamp to time(NULL)).
 from __future__ import annotations
 
 import json
-import socket
 import sys
 import threading
 import time
 from collections import deque
 from pathlib import Path
 
-from . import VERSION, adapter, host as host_mod
+from . import VERSION, adapter
 from .alerts import AlertEngine, cfg_from_settings, empty_obs, tor_sending_active
 from .flood import FloodWatch
 from .history import History
-from .host import HostReader, annotate_peers
 from .lamps import LampTracker, compute as compute_lamps
 from .logevents import NodeLog
 from .pool import MINED_KEPT, PoolList
-from .rpc import RpcClient, RpcError
+from .rpc import RpcClient, RpcError, on_this_computer
 from .settings import DEFAULTS, node_log_path
 from .util import clock_style
 
@@ -62,11 +58,9 @@ REORG_MAP_SIZE = 100
 ARRIVAL_MAX_NEW = 3         # more new (or replaced) blocks than this at once is catching up: no arrival times
 STEADY_MIN_S = 5            # arrival times only when the poll before answered within max(this, 3 polls)
 MAX_EVENTS = 200
-DISCOVER_EVERY_S = 60       # find the node's settings again at most this often (or when its pid changes)
 PEER_EVENTS_EVERY_S = 5     # peers joining and leaving go in one event per this many seconds at most
 MAX_WAIT_S = 20             # the longest the window's request for a newer snapshot is held
-LOG_EVENTS_PER_READ = 20    # monerod's log lines shown as events per local read; the rest are counted
-DEFAULT_DATA_DIR = "~/.bitmonero"
+LOG_EVENTS_PER_READ = 20    # monerod's log lines shown as events per poll; the rest are counted
 MONEROD_OUT_PEERS = 12      # monerod's own default (P2P_DEFAULT_CONNECTIONS_COUNT, cryptonote_config.h)
 
 NODE_KEYS = ["version", "nettype", "started", "uptime_s", "height", "target_height", "synced", "sync_pct",
@@ -103,23 +97,12 @@ def test_connection(url: str, user: str, password: str, timeout: float) -> dict:
 
 class Poller:
     def __init__(self, settings, *, clock=time.time, state_dir: Path | None = None, log=None,
-                 host_reader=None, discover=None, node_log=None):
+                 node_log=None):
         self.settings = settings
         self.clock = clock
         self.state_dir = Path(state_dir) if state_dir else None
         self.log = log or (lambda msg: print(msg, file=sys.stderr))
-        # local reads; tests pass stand-ins for these three
-        self.host_reader = host_reader or HostReader(settings.get("source.rpc_url"), DEFAULT_DATA_DIR,
-                                                     every_s=settings.get("local.every_s"))
-        self._discover = discover or host_mod.discover
-        self.node_log = node_log or NodeLog(settings.get("node.log_path"))
-        self._host = None             # the last local read (snapshot.host)
-        self._host_t = None
-        self._disc = None             # the last host.discover() answer, when, and the pid it saw
-        self._disc_t = None
-        self._disc_pid = None
-        self._node_found = None       # the discovered monerod the dashboard reads, or None
-        self.host_name = socket.gethostname()
+        self.node_log = node_log or NodeLog(settings.get("node.log_path"))   # tests pass a stand-in
         self._lock = threading.Lock()
         self._new_snapshot = threading.Condition(self._lock)
         self._seq = 0                 # the number of the latest snapshot
@@ -186,23 +169,6 @@ class Poller:
     def wake(self):
         self._wake.set()
 
-    def node_elsewhere(self) -> bool:
-        """Whether the last read of this computer found the node running on another one."""
-        return bool((self._host or {}).get("remote"))
-
-    def node_log_file(self):
-        """The log file host.discover found for the node the dashboard reads, or None (not found,
-        or local reads off). The log readers always allow it (util.log_path_refusal)."""
-        return (self._node_found or {}).get("log_file")
-
-    def discover(self) -> dict:
-        """GET /api/discover: every monerod running as this user, read afresh."""
-        try:
-            return self._discover()
-        except Exception as e:
-            self.log("discover: unexpected %s" % type(e).__name__)
-            return {"ok": False, "error": "Finding the node failed", "found": []}
-
     def start(self):
         if self._thread is None:
             self._thread = threading.Thread(target=self._run, name="memstara-poller", daemon=True)
@@ -242,7 +208,8 @@ class Poller:
     # ------------------------------------------------------------------ state
     def _reset_source(self):
         self.client = None
-        self.remote_said = None          # (how, where) of the last "another computer" note
+        self.elsewhere_said = False      # the notes for an RPC address not on this computer, once per node
+        self.nologin_said = False        # and the one for its answering with no login, once it answers
         self.answering_prev = None
         self.restricted_prev = None
         self.last_ok = None
@@ -270,8 +237,6 @@ class Poller:
         self.synced_prev = None
         self.bootstrap_prev = None     # the bootstrap node answering get_info last time, or None
         self.node_last: dict = {}
-        self._host_t = None           # another node: read this computer again now
-        self._disc_t = None
 
     # ------------------------------------------------------------------ one poll
     def poll_once(self, now: float | None = None) -> dict:
@@ -364,7 +329,7 @@ class Poller:
         self._bootstrap_events(bootstrap, now)
         if restricted and not self.restricted_prev:
             self.add_event("source", "This is a restricted RPC port: point the dashboard at the admin "
-                                     "(unrestricted) port to see peers, bans and traffic", "warn", now)
+                                     "(unrestricted) port to see peers, bans, traffic and disk space", "warn", now)
         if bootstrap is None:
             self.restricted_prev = restricted
 
@@ -634,95 +599,45 @@ class Poller:
         kind = "peer_out" if j_out else "peer_in" if j_in else "peer_gone"
         self.add_event(kind, " · ".join(bits), "info", now)
 
-    # ------------------------------------------------------------------ local reads
-    def _local(self, vals, now, url, peers):
-        """This computer, every local.every_s: snapshot.host (None when off), monerod's log as
-        events, and which running monerod is the node. Also sets peers' round trips."""
-        if not vals["local.enabled"]:
-            self._host = self._host_t = None
-            self._node_found = None
-            annotate_peers(peers["list"], None)
-            return None
-        every = vals["local.every_s"]
-        if self._host_t is None or not 0 <= now - self._host_t < every - 0.5:
-            r = self.host_reader
-            r.rpc_url, r.every_s = url, every
-            r.data_dir = (self._node_found or {}).get("data_dir") or DEFAULT_DATA_DIR
-            try:
-                # each counter timed by when it is read, on the same clock as the traffic rate
-                self._host = r.read(now, clock=lambda: now + self._since_start())
-            except Exception as e:   # host.py never raises; this is a last guard
-                self._host = HostReader.empty("This computer couldn't be read (%s)" % type(e).__name__, every,
-                                              round(now, 3))
-            self._host_t = now
-            if self._host.get("remote"):
-                # the node runs on another computer: no process here to find, and its log is
-                # read only from a path set by hand (a copy or a mounted folder)
-                self._node_found = None
-                if vals["node.log_path"] != DEFAULTS["node.log_path"]:
-                    self._log_events(vals, now)
-            else:
-                pid = (self._host.get("proc") or {}).get("pid")
-                self._find_node(now, pid, url)
-                self._log_events(vals, now)
-        try:
-            self.host_reader.annotate(peers["list"])
-        except Exception:
-            annotate_peers(peers["list"], None)
-        return self._host
-
-    def _remote_notes(self, vals, now, url, host, answering):
-        """Once per node and way of reaching it: that it runs on another computer, and what
-        anyone else on the network between could do when it's reached without a tunnel."""
-        remote = (host or {}).get("remote")
-        if not remote:
-            if host is not None:
-                self.remote_said = None
+    def _elsewhere_notes(self, vals, now, url, answering):
+        """Once per node: that its RPC address isn't on this computer, and what anyone else on
+        the network between could do when it's reached without a tunnel (the no-login note
+        waits for a poll the node answers)."""
+        if on_this_computer(url):
             return
-        said = (remote["how"], remote["where"])
-        if said == self.remote_said:
-            return
-        self.remote_said = said
-        if remote["how"] == "tunnel":
-            self.add_event("source", "The node is reached through %s on %s, so it runs on another computer: "
-                           "this computer's readings are left out" % (remote["via"], remote["where"]), "info", now)
-            return
-        self.add_event("source", "The node runs on another computer (%s): this computer's readings are left out"
-                       % remote["where"], "info", now)
-        if url.lower().startswith("http://"):
-            self.add_event("source", "The node is read over plain http across the network: anyone on that "
-                           "network can read its answers, and on its unrestricted port could send it commands. "
-                           "An SSH tunnel keeps it private (see the README)", "warn", now)
-        if answering and not vals["source.rpc_user"]:
+        if not self.elsewhere_said:
+            self.elsewhere_said = True
+            self.add_event("source", "The RPC address %s isn't on this computer, so the node may run on another "
+                           "one: its log is read only from a path set in Settings" % _hostport(url), "info", now)
+            if url.lower().startswith("http://"):
+                self.add_event("source", "The node is read over plain http across the network: anyone on that "
+                               "network can read its answers, and on its unrestricted port could send it "
+                               "commands. An SSH tunnel keeps it private (see the README)", "warn", now)
+        if answering and not vals["source.rpc_user"] and not self.nologin_said:
+            self.nologin_said = True
             self.add_event("source", "The node answers with no login. Anyone who can reach its unrestricted "
                            "port can change it: start monerod with --rpc-login and put the same name and "
                            "password in Settings", "warn", now)
 
     def _out_wanted(self, vals):
         """How many outgoing connections the node aims for, and where that number came from:
-        the setting when it's above 0 ("setting"), else the node's --out-peers flag or config
-        line ("node"), else monerod's default ("default"). A limit changed later with the
-        out_peers command isn't seen here; set the number in Settings then."""
+        the setting when it's above 0 ("setting"), else monerod's default ("default"). A limit
+        set with --out-peers or the out_peers command isn't in the RPC answers; set the number
+        in Settings then."""
         n = vals["thresholds.out_wanted"]
         if n:
             return n, "setting"
-        flag = (self._node_found or {}).get("out_peers")
-        if isinstance(flag, int):
-            return flag, "node"
         return MONEROD_OUT_PEERS, "default"
 
-    def _find_node(self, now, pid, url):
-        """The running monerod's own settings (host.discover), at most once a minute or when
-        the node's pid changes; then which of the monerods found is the one at `url`."""
-        if (self._disc is None or self._disc_t is None or not 0 <= now - self._disc_t < DISCOVER_EVERY_S
-                or pid != self._disc_pid):
-            self._disc = self.discover()
-            self._disc_t, self._disc_pid = now, pid
-        self._node_found = host_mod.match_node(self._disc.get("found") or [], pid, url)
-
+    # ------------------------------------------------------------------ monerod's log
     def _log_events(self, vals, now):
-        self.node_log.found = self.node_log_file()
-        self.node_log.path = node_log_path(vals, self.node_log.found)
+        """monerod's log lines since the last poll, as events. While the RPC address isn't on this
+        computer, the log at the default place may be another node's, so the log is read only from
+        a path set by hand (a copy or a mounted folder)."""
+        path = node_log_path(vals)
+        if path == DEFAULTS["node.log_path"] and not on_this_computer(source_url(vals)):
+            return
+        self.node_log.path = path
         try:
             evs = self.node_log.poll(now)
         except Exception as e:   # logevents never raises; this is a last guard
@@ -755,20 +670,18 @@ class Poller:
                 node["ban_list"], node["bans_long"] = adapter.parse_ban_list(
                     self.slow["get_bans"], now - self.slow_t.get("get_bans", now))
 
-        # ---- this computer (and which running monerod is the node)
-        peers = parts["peers"]
-        host = self._local(vals, now, url, peers)
-        self._remote_notes(vals, now, url, host, answering)
+        # ---- monerod's log
+        self._log_events(vals, now)
+        self._elsewhere_notes(vals, now, url, answering)
         node["out_wanted"], node["out_wanted_from"] = self._out_wanted(vals)
-        found = self._node_found if host is not None else None
 
         # ---- Tor sending
+        peers = parts["peers"]
         tor_count = peers["out_by_kind"]["tor"] if peers.get("out_by_kind") else None
         i2p_count = peers["out_by_kind"]["i2p"] if peers.get("out_by_kind") else 0
         if tor_count:
             self.tor_seen = True
-        tor_active = tor_sending_active(vals["thresholds.tor_sending"], self.tor_seen,
-                                        found.get("tx_proxy_tor") if found else None)
+        tor_active = tor_sending_active(vals["thresholds.tor_sending"], self.tor_seen)
         node["tor_out"] = tor_count if (answering and tor_active and tor_count is not None) else None
 
         # ---- chain
@@ -791,8 +704,8 @@ class Poller:
             "mode": "live", "rpc": _hostport(url), "answering": answering,
             "error": None if answering else parts["error"], "latency_ms": parts["latency"],
             "restricted": restricted, "last_ok": int(self.last_ok) if self.last_ok else None,
-            "poll_s": vals["source.refresh_s"], "host_name": self.host_name,
-            "dashboard_version": VERSION, "bootstrap": parts["bootstrap"] if answering else None,
+            "poll_s": vals["source.refresh_s"], "dashboard_version": VERSION,
+            "bootstrap": parts["bootstrap"] if answering else None,
         }
 
         # ---- alerts
@@ -814,7 +727,6 @@ class Poller:
             "restarts": self.restarts if not restricted else [],
             "out16": spread["out16"] if spread else None, "in24": spread["in24"] if spread else None,
             "flood": chain["flood"] if answering else None,
-            "computer": host.get("computer") if host and host.get("ok") is not False else None,
         })
         cfg = cfg_from_settings(vals)
         cfg["out_wanted"] = node["out_wanted"]
@@ -833,8 +745,6 @@ class Poller:
         lamps = self.lamps.build(rows, now)
 
         # ---- history
-        comp = (host or {}).get("computer") or {}
-        proc = (host or {}).get("proc") or {}
         self.history.record(now, {
             "out": node.get("out_peers") if answering else None,
             "in": node.get("in_peers") if answering else None,
@@ -842,7 +752,6 @@ class Poller:
             "pool": parts["mempool"].get("txs") if answering else None,
             "rate_in": parts["traffic"]["rate_in"], "rate_out": parts["traffic"]["rate_out"],
             "latency": parts["latency"],
-            "cpu_temp_c": comp.get("cpu_temp_c"), "node_cpu_pct": proc.get("cpu_pct"),
         })
 
         return {
@@ -858,7 +767,6 @@ class Poller:
             "traffic": parts["traffic"],
             "alerts": alerts,
             "lamps": lamps,
-            "host": host,
             "events": list(self.events),
             # the history row still filling, this reading included: a chart's newest point
             "hist": self.history.current(),
@@ -874,7 +782,7 @@ class Poller:
             "source": {"mode": "live", "rpc": _hostport(source_url(vals)), "answering": False,
                        "error": "Starting: the first reading hasn't come in yet", "latency_ms": None,
                        "restricted": False, "last_ok": None, "poll_s": vals["source.refresh_s"],
-                       "host_name": self.host_name, "dashboard_version": VERSION, "bootstrap": None},
+                       "dashboard_version": VERSION, "bootstrap": None},
             "node": node,
             "chain": {"blocks": [], "avg_interval_s": None, "median_weight": None, "max_weight": None, "wait_odds": None,
                       "reorg": {"deepest_24h": None, "last": None}, "sync": None,
@@ -884,7 +792,6 @@ class Poller:
             "traffic": {"bytes_in": None, "bytes_out": None, "rate_in": None, "rate_out": None},
             "alerts": [],
             "lamps": LampTracker().build(rows, self.clock()),
-            "host": None,
             "events": [],
             "hist": None,
         }

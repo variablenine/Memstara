@@ -36,9 +36,6 @@ class SettingsTest(unittest.TestCase):
         on_disk = json.loads(self.path.read_text())
         self.assertEqual(on_disk["source"]["rpc_url"], "http://127.0.0.1:18081")
         self.assertEqual(self.s.values(), DEFAULTS)
-        self.assertEqual(self.s.file_keys, set(), "a first run: nothing was in the file yet")
-        again = Settings(self.path, log=lambda m: None).load()
-        self.assertIn("source.rpc_url", again.file_keys)
 
     def test_an_existing_folder_made_private_on_save(self):
         os.chmod(self.dir, 0o755)    # made earlier with mkdir -p, say
@@ -55,20 +52,17 @@ class SettingsTest(unittest.TestCase):
         d = DEFAULTS
         self.assertEqual(d["source.rpc_url"], "http://127.0.0.1:18081", "monerod's own default port")
         self.assertEqual(d["display.accent"], "amber")
-        self.assertEqual((d["local.enabled"], d["local.every_s"], d["display.temp_unit"]), (True, 1, "auto"))
         self.assertEqual(d["source.refresh_s"], 1, "the node is read every second")
         by_key = {e["key"]: e for e in SCHEMA}
-        self.assertEqual([c["value"] for c in by_key["local.every_s"]["choices"]], [1, 5, 10, 30])
         self.assertEqual([c["value"] for c in by_key["source.refresh_s"]["choices"]], [1, 2, 5, 10, 30])
-        self.assertEqual([(c["value"], c["label"]) for c in by_key["display.temp_unit"]["choices"]],
-                         [("auto", "Auto (by language)"), ("f", "°F"), ("c", "°C")])
+        for gone in ("local.enabled", "local.every_s", "display.temp_unit", "panels.computer"):
+            self.assertNotIn(gone, by_key, "nothing is read from this computer but monerod's log")
         self.assertEqual([c["value"] for c in next(e for e in SCHEMA if e["key"] == "display.accent")["choices"]],
                          ["amber", "phosphor", "ice", "bone", "violet", "monero"])
         self.assertEqual([k[7:] for k in d if k.startswith("panels.")], PANEL_IDS)
         self.assertIn("route", PANEL_IDS)
         self.assertEqual(PANEL_IDS, ["lamps", "chain", "peers", "route", "bans", "traffic", "history", "mempool",
-                                     "events", "computer", "system", "flood"])
-        self.assertEqual(by_key["panels.computer"]["label"], "Computer")
+                                     "events", "system", "flood"])
         self.assertEqual(by_key["panels.bans"]["label"], "Ban list")
         self.assertNotIn("controls.enabled", by_key, "nothing can change the node, so there's nothing to turn off")
         self.assertEqual(d["node.log_path"], "~/.bitmonero/bitmonero.log")
@@ -85,10 +79,9 @@ class SettingsTest(unittest.TestCase):
     def test_types(self):
         e = self.errors({"thresholds.low_peers": "abc", "display.glow": "yes", "source.refresh_s": 7,
                          "display.accent": "plaid", "source.timeout_s": True, "chain.blocks_shown": 1.5,
-                         "source.rpc_user": 5, "node.log_path": ["x"], "local.every_s": 7})
+                         "source.rpc_user": 5, "node.log_path": ["x"]})
         self.assertEqual(set(e), {"thresholds.low_peers", "display.glow", "source.refresh_s", "display.accent",
-                                  "source.timeout_s", "chain.blocks_shown", "source.rpc_user", "node.log_path",
-                                  "local.every_s"})
+                                  "source.timeout_s", "chain.blocks_shown", "source.rpc_user", "node.log_path"})
         self.assertEqual(self.s.get("thresholds.low_peers"), 8, "nothing changes when any key is bad")
 
     def test_lenient_numbers(self):
@@ -156,8 +149,9 @@ class SettingsTest(unittest.TestCase):
         self.s.reset_section("thresholds")
         self.assertEqual(self.s.get("thresholds.low_peers"), 8)
         self.assertEqual(self.s.get("grace.peers_min"), 3)
-        with self.assertRaises(SettingsError):
-            self.s.reset_section("demo")
+        for gone in ("demo", "local"):
+            with self.assertRaises(SettingsError):
+                self.s.reset_section(gone)
 
     def test_listeners(self):
         seen = []
@@ -178,18 +172,17 @@ class SettingsTest(unittest.TestCase):
         self.assertTrue(s.load_warnings)
 
     def test_old_file_moves_to_every_second_once(self):
-        # a file from before reads every second (no "format"), with the old defaults it was
+        # a file from before reads every second (no "format"), with the old default it was
         # first saved with and two sections nobody knows any more
         self.path.write_text(json.dumps({
             "source": {"rpc_url": "http://127.0.0.1:28081", "refresh_s": 5, "timeout_s": 8},
-            "local": {"enabled": True, "every_s": 10},
             "someaddon": {"enabled": True, "data_file": "~/x"}, "gone": {"a": 1}}))
         s = Settings(self.path, log=lambda m: None).load()
-        self.assertEqual((s.get("source.refresh_s"), s.get("local.every_s")), (1, 1))
+        self.assertEqual(s.get("source.refresh_s"), 1)
         self.assertEqual(s.get("source.rpc_url"), "http://127.0.0.1:28081")
         raw = json.loads(self.path.read_text())
         self.assertEqual(raw["format"], FORMAT)
-        self.assertEqual((raw["source"]["refresh_s"], raw["local"]["every_s"]), (1, 1))
+        self.assertEqual(raw["source"]["refresh_s"], 1)
         self.assertEqual(raw["someaddon"], {"enabled": True, "data_file": "~/x"},
                          "moving the file to the new format leaves unknown sections as they were")
         self.assertEqual(stat.S_IMODE(os.stat(self.path).st_mode), 0o600)
@@ -198,10 +191,31 @@ class SettingsTest(unittest.TestCase):
         self.assertEqual(Settings(self.path, log=lambda m: None).load().get("source.refresh_s"), 5)
 
     def test_old_file_keeps_values_someone_picked(self):
-        self.path.write_text(json.dumps({"source": {"refresh_s": 10}, "local": {"every_s": 30}}))
+        self.path.write_text(json.dumps({"source": {"refresh_s": 10}}))
         s = Settings(self.path, log=lambda m: None).load()
-        self.assertEqual((s.get("source.refresh_s"), s.get("local.every_s")), (10, 30))
+        self.assertEqual(s.get("source.refresh_s"), 10)
         self.assertEqual(json.loads(self.path.read_text())["format"], FORMAT)
+
+    def test_old_file_with_settings_for_reading_this_computer(self):
+        # a file from before (format 1) with the settings for reading this computer, which are
+        # gone: it loads cleanly, and they're dropped at the next save
+        self.path.write_text(json.dumps({
+            "source": {"rpc_url": "http://127.0.0.1:18089", "refresh_s": 5},
+            "local": {"enabled": False, "every_s": 10},
+            "display": {"temp_unit": "c", "clock": "24h"}, "panels": {"computer": False, "route": False}}))
+        s = Settings(self.path, log=lambda m: None).load()
+        self.assertEqual(s.load_warnings, [])
+        self.assertEqual((s.get("source.rpc_url"), s.get("source.refresh_s"), s.get("display.clock"),
+                          s.get("panels.route")), ("http://127.0.0.1:18089", 1, "24h", False))
+        for gone in ("local.enabled", "local.every_s", "display.temp_unit", "panels.computer"):
+            self.assertNotIn(gone, s.values())
+        s.update({"thresholds.low_peers": 9})
+        raw = json.loads(self.path.read_text())
+        self.assertNotIn("local", raw)
+        self.assertEqual(raw["display"]["clock"], "24h")
+        self.assertNotIn("temp_unit", raw["display"])
+        self.assertNotIn("computer", raw["panels"])
+        self.assertEqual(Settings(self.path, log=lambda m: None).load().get("panels.route"), False)
 
     def test_migrate_leaves_a_current_file_alone(self):
         self.assertIsNone(migrate({"format": FORMAT, "source": {"refresh_s": 5}}))

@@ -1,5 +1,5 @@
 """monerod's own log as events (read-only): the lines added since the last read, turned
-into dashboard events as docs/DESIGN.md "Local reads" lists them.
+into dashboard events as docs/DESIGN.md "monerod's log as events" lists them.
 
 monerod writes its log with easylogging++ in the format MLOG_BASE_FORMAT from
 contrib/epee/src/mlog.cpp:
@@ -27,8 +27,7 @@ too, and a partial last line waits for the next poll. At most 1 MB is read per p
 when more than that is waiting, the older part is skipped. Changing log.path starts
 over at the end of the new file. Like GET /api/node-log, a path that is a link to
 somewhere outside the user's home folder, isn't a regular file, is inside the dashboard's
-own settings or state folder, or whose name has no ".log" is refused, unless it is the log
-file host.discover found for the node (log.found, set by the poller).
+own settings or state folder, or whose name has no ".log" is refused.
 """
 
 from __future__ import annotations
@@ -81,9 +80,8 @@ def _inside(path: str, folder: str) -> bool:
         return False
 
 
-def _open_log(path: str, home: str | None, found: str | None = None):
-    """Open the log read-only -> (fd, fstat). Raises LogError with a plain reason.
-    `found`: the log file host.discover found for the node, which may always be read."""
+def _open_log(path: str, home: str | None):
+    """Open the log read-only -> (fd, fstat). Raises LogError with a plain reason."""
     if not path:
         raise LogError("No log file is set")
     p = os.path.abspath(os.path.expanduser(path))
@@ -91,7 +89,7 @@ def _open_log(path: str, home: str | None, found: str | None = None):
     home_real = os.path.realpath(home or os.path.expanduser("~"))
     if real != p and not _inside(real, home_real):
         raise LogError("The log path is a link to somewhere outside your home folder, so it isn't read")
-    why = log_path_refusal(real, found)
+    why = log_path_refusal(real)
     if why == "own":
         raise LogError("The log path is in the dashboard's own settings or state folder, so it isn't read")
     if why == "name":
@@ -154,7 +152,6 @@ class NodeLog:
     def __init__(self, path: str, home: str | None = None):
         self.path = path
         self.home = home            # tests only; the user's home folder otherwise
-        self.found = None           # the log file host.discover found for the node: always allowed
         self.error = None
         self._used_path = None      # path the state below belongs to
         self._ident = None          # (st_dev, st_ino) of the file being followed
@@ -175,7 +172,7 @@ class NodeLog:
         else:
             first = False
         try:
-            fd, st = _open_log(self.path, self.home, self.found)
+            fd, st = _open_log(self.path, self.home)
         except LogError as e:
             # not there at the start: when it shows up it is a new file, read from its start
             self.error = str(e)

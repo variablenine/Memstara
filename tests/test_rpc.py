@@ -208,5 +208,29 @@ class ErrorsTest(unittest.TestCase):
             fake.stop()
 
 
+class AddressTest(unittest.TestCase):
+    """same_rpc and on_this_computer: only the addresses are looked at, nothing is sent."""
+
+    def test_same_rpc(self):
+        same = rpc.same_rpc
+        self.assertTrue(same("http://127.0.0.1:18081", "http://127.0.0.1:18081/"))
+        self.assertTrue(same("http://localhost:18081", "http://[::1]:18081"), "loopback names are the same host")
+        self.assertTrue(same("http://NODE.lan:18081", "http://node.lan:18081"))
+        self.assertTrue(same("http://192.0.2.5", "http://192.0.2.5:80"), "the scheme's own port")
+        self.assertFalse(same("http://127.0.0.1:18081", "https://127.0.0.1:18081"))
+        self.assertFalse(same("http://127.0.0.1:18081", "http://127.0.0.1:18089"))
+        self.assertFalse(same("http://127.0.0.1:18081", "http://192.0.2.5:18081"))
+        self.assertFalse(same("", "http://127.0.0.1:18081"))
+
+    def test_on_this_computer(self):
+        for url in ("http://127.0.0.1:18081", "http://127.8.9.10:18081", "http://[::1]:18081",
+                    "http://localhost:18081", "https://LOCALHOST:18089/", "http://0.0.0.0:18081",
+                    "http://[::]:18081"):
+            self.assertTrue(rpc.on_this_computer(url), url)
+        for url in ("http://192.0.2.10:18081", "http://node.lan:18081", "http://[2001:db8::5]:18081",
+                    "http://localhost.example:18081", ""):
+            self.assertFalse(rpc.on_this_computer(url), url)
+
+
 if __name__ == "__main__":
     unittest.main()

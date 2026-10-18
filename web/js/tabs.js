@@ -4,7 +4,7 @@
 // to it, and in the window's storage so the app opens on it next time.
 import { $ } from "./dom.js";
 
-export const SCREENS = ["status", "network", "chain", "mempool", "traffic", "computer", "bans", "log"];
+export const SCREENS = ["status", "network", "chain", "mempool", "traffic", "bans", "log"];
 
 // which screen an alert belongs to; STATUS also shows the worst of all of them
 const ALERT_SCREEN = {
@@ -12,7 +12,6 @@ const ALERT_SCREEN = {
   peers: "network", spread_out: "network", spread_in: "network", tor: "network",
   syncing: "chain", no_blocks: "chain", reorg: "chain", disk: "chain", flood: "chain",
   double_spend: "mempool",
-  cpu_temp: "computer", memory: "computer", power: "computer",
 };
 const STORE = "memstara-screen";
 

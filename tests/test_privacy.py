@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 import helpers
-from helpers import WRITE, StubDiscover, StubHost, found_node, get_json, request
+from helpers import WRITE, get_json, request
 from fake_monerod import FakeMonerod
 from memstara.app import App
 from memstara.privacy import REVEAL_WORD, TOKEN_RE, Redactor, has_token, utc_clocks, utc_stamps
@@ -82,7 +82,10 @@ class ScrubTest(unittest.TestCase):
         self.assertEqual(self.s("1.2.3.4:99999"), t("ip", "1.2.3.4") + ":99999", "not a port")
         self.assertEqual(self.s("peer 2001:DB8:0::5. done"), "peer %s. done" % t("ip6", "2001:db8::5"))
         self.assertEqual(self.s("fe80::1%wlan0"), t("ip6", "fe80::1"))
+        self.assertEqual(self.s("fe80::1%wlan0:18080"), "%s:%s" % (t("ip6", "fe80::1"), t("port", "18080")))
         self.assertEqual(self.s("::ffff:100.90.146.87"), t("ip", "100.90.146.87"), "mapped: the IPv4 token")
+        self.assertEqual(self.s("::ffff:100.90.146.87:18080"), "%s:%s" % (t("ip", "100.90.146.87"), t("port", "18080")))
+        self.assertEqual(self.s("100.090.146.087"), t("ip", "100.90.146.87"), "leading zeros")
         self.assertEqual(self.s(ONION + ":18084"), t("tor", ONION) + ":18084")
         self.assertEqual(self.s("abcdefghijklmnop.onion"), t("tor", "abcdefghijklmnop.onion"))
         self.assertEqual(self.s("x" * 52 + ".b32.i2p"), t("i2p", "x" * 52 + ".b32.i2p"))
@@ -94,6 +97,7 @@ class ScrubTest(unittest.TestCase):
         self.assertEqual(self.s("62.233.57.0/24"), t("n24", "62.233.57") + ".0/24")
         self.assertEqual(self.s("62.233.57.7/24"), t("n24", "62.233.57") + ".0/24")
         self.assertEqual(self.s("1.2.3.4/32"), t("ip", "1.2.3.4") + "/32")
+        self.assertEqual(self.s("62.233.057.0/24"), t("n24", "62.233.57") + ".0/24", "leading zeros")
         self.assertEqual(self.s("10.0.0.0/8"), t("net", "10.0.0.0/8"))
         self.assertEqual(self.s("100.110.x.x, 1.2.3.x and 5.6.*.*."),
                          "%s.x.x, %s.x and %s.*.*." % (t("n16", "100.110"), t("n24", "1.2.3"), t("n16", "5.6")))
@@ -128,23 +132,27 @@ class ScrubTest(unittest.TestCase):
         self.assertEqual(self.s("mining to " + ADDRESS), "mining to " + t("addr", ADDRESS))
         self.assertEqual(self.s("http://me:secret@127.0.0.1:18081"), "http://%s@127.0.0.1:18081" % t("login", "me:secret@"))
 
-    def test_learned_ports(self):
-        r = self.r
-        text = "Binding on 10.20.30.40:47213 then 47213 alone; 147213 and 47213.5 stay"
-        before = r.scrub(text)
-        self.assertIn("47213 alone", before)
-        r.learn({"host": {"proc": {"flags": ["--p2p-bind-port=47213"]}}, "peers": {"list": [{"port": 18080}]}})
-        after = r.scrub(text)
-        self.assertNotIn("47213 ", after.replace("147213", ""))
-        self.assertIn("147213 and 47213.5 stay", after)
-        self.assertIn("%s:%s" % (r.token("ip", "10.20.30.40"), r.token("port", "47213")), after)
-        self.assertIn("18080", r.scrub("peer on 18080"), "peers' ports aren't learned")
-        r.learn({"host": {"proc": {"flags": ["--p2p-bind-port=40404", "--p2p-bind-port-ipv6", "40405"]}}})
-        self.assertEqual(r.scrub("40404 40405"), "%s %s" % (r.token("port", "40404"), r.token("port", "40405")))
+    def test_where_the_node_listens(self):
+        t = self.t
+        # a port after 0.0.0.0 or :: (every address here) is where monerod listens: its own p2p port
+        self.assertEqual(self.s("Binding (IPv4) on 0.0.0.0:47213"), "Binding (IPv4) on 0.0.0.0:%s" % t("port", "47213"))
+        self.assertEqual(self.s("on [::]:47213."), "on [::]:%s." % t("port", "47213"))
+        self.assertEqual(self.s("[::ffff:0.0.0.0]:47213"), "[::ffff:0.0.0.0]:%s" % t("port", "47213"))
+        self.assertEqual(self.s("Binding (IPv6) on :::47213"), "Binding (IPv6) on :::%s" % t("port", "47213"))
+        self.assertEqual(self.s("::ffff:0.0.0.0:47213"), "::ffff:0.0.0.0:%s" % t("port", "47213"))
+        self.assertEqual(self.s("External port defined as 47213"), "External port defined as %s" % t("port", "47213"))
+        # an address of its own: hidden, and the port after it with it
+        self.assertEqual(self.s("Binding (IPv6) on 2001:db8::5:47213"),
+                         "Binding (IPv6) on %s:%s" % (t("ip6", "2001:db8::5"), t("port", "47213")))
+        # the address itself stays, and so do loopback addresses with their ports (the RPC address
+        # on this computer is shown on purpose)
+        for text in ("0.0.0.0 and :: alone", "RPC on 127.0.0.1:18081", "[::1]:18081", "::1:18081", "127.0.0.2:18089",
+                     "0.0.0.0:99999", "47213 alone"):
+            self.assertEqual(self.s(text), text, text)
 
     def test_the_nodes_computer_by_name(self):
         r = self.r
-        text = "The node runs on another computer (node-box.lan:18081): this computer's readings are left out"
+        text = "The RPC address node-box.lan:18081 isn't on this computer, so the node may run on another one"
         self.assertIn("node-box.lan", r.scrub(text))
         r.learn({"source": {"rpc": "node-box.lan:18081"}})
         self.assertEqual(r.scrub(text), text.replace("node-box.lan", r.token("host", "node-box.lan")))
@@ -152,14 +160,16 @@ class ScrubTest(unittest.TestCase):
             r = redactor()
             r.learn({"source": {"rpc": rpc}})
             self.assertEqual(len(r._names), 3, rpc)   # this computer's two names and the user's
+        r.learn({"peers": {"list": [{"port": 18080}]}})
+        self.assertEqual(r.scrub("peer on 18080"), "peer on 18080", "only the RPC address is learned from")
 
     def test_nothing_found_inside_a_token(self):
         r = self.r
-        r.learn({"host": {"proc": {"flags": ["--p2p-bind-port", "4242"]}}})
+        r.learn({"source": {"rpc": "node-box.lan:18081"}})
         tok = r.token("hex", "z")
         self.assertEqual(r.scrub("a %s b" % tok), "a %s b" % tok)
         for _ in range(3):
-            once = r.scrub("PORT 47213 at 1.2.3.4 on AliceTower")
+            once = r.scrub("PORT 47213 at 1.2.3.4 on AliceTower via node-box.lan and 0.0.0.0:18080")
             self.assertEqual(r.scrub(once), once, "scrubbing again changes nothing")
 
 
@@ -171,20 +181,18 @@ class AnswerTest(unittest.TestCase):
     def test_keys(self):
         t = self.t
         snap = {
-            "source": {"rpc": "127.0.0.1:18081", "host_name": "AliceTower"},
+            "source": {"rpc": "127.0.0.1:18081"},
             "node": {"top_hash": BLOCK, "ban_list": [{"host": "62.233.57.0/24", "seconds": 60}]},
             "chain": {"blocks": [{"hash": BLOCK, "height": 5}]},
             "peers": {"list": [{"id": "e547c9c2", "ip": "100.90.146.87", "host": "100.90.146.87", "port": 18080,
                                 "net16": "100.79", "net24": "100.79.232"}],
                       "spread": {"out16": {"net": "100.79", "n": 1, "ips": ["100.90.146.87"]}}},
-            "host": {"proc": {"exe": HOME + "/monero/monerod", "flags": ["--p2p-bind-port", "47213",
-                                                                              "--data-dir", HOME + "/.bitmonero"]}},
         }
         orig = copy.deepcopy(snap)
         out = json.loads(self.r.snapshot_json(snap))
         self.assertEqual(snap, orig, "the poller's snapshot is left as it was")
         self.assertIs(out["privacy"], True)
-        self.assertEqual(out["source"], {"rpc": "127.0.0.1:18081", "host_name": t("host", "AliceTower")})
+        self.assertEqual(out["source"], {"rpc": "127.0.0.1:18081"}, "the RPC address on this computer is shown")
         self.assertEqual(out["node"]["top_hash"], BLOCK, "block hashes are public")
         self.assertEqual(out["chain"]["blocks"][0]["hash"], BLOCK)
         self.assertEqual(out["node"]["ban_list"][0]["host"], t("n24", "62.233.57") + ".0/24")
@@ -192,8 +200,6 @@ class AnswerTest(unittest.TestCase):
         self.assertEqual(p, {"id": "e547c9c2", "ip": t("ip", "100.90.146.87"), "host": t("ip", "100.90.146.87"),
                              "port": t("port", "18080"), "net16": t("n16", "100.79"), "net24": t("n24", "100.79.232")})
         self.assertEqual(out["peers"]["spread"]["out16"]["net"], t("n16", "100.79"))
-        self.assertEqual(out["host"]["proc"], {"exe": "~/monero/monerod",
-                                               "flags": ["--p2p-bind-port", t("port", "47213"), "--data-dir", "~/.bitmonero"]})
         # the window's range keys line up: a /24 built from net24 matches the ban list's
         self.assertEqual(p["net24"] + ".0/24", out["node"]["ban_list"][0]["host"].replace(t("n24", "62.233.57"), p["net24"]))
         self.assertIs(self.r.snapshot_json(snap), self.r.snapshot_json(snap), "made once per snapshot")
@@ -266,7 +272,7 @@ class AnswerTest(unittest.TestCase):
             "events": [{"text": "Banned 100.90.146.87 (port 47213) for AliceTower"}],
             "alerts": [{"text": "x", "details": ["100.90.146.87", "[2001:db8::77]:18080"]}],
             "lamps": [{"value": "PORT 47213"}],
-            "host": {"bind_if": {"address": "2001:db8::77"}, "proc": {"flags": ["--anonymous-inbound", ONION + ":18084,127.0.0.1:18084"]}},
+            "node": {"address": "2001:db8::77", "inbound": ["--anonymous-inbound", ONION + ":18084,127.0.0.1:18084"]},
             "something_new": {"deep": [["mining to " + ADDRESS, "tx " + TXID, "aa:bb:cc:dd:ee:ff", "/home/alice/x",
                                         "62.233.57.0/24", "100.79.232.x", "Alice's", "http://u:secretpw@1.2.3.4/"]]},
         }
@@ -353,28 +359,21 @@ class ServerPrivacyTest(unittest.TestCase):
         cls.log.write_text("2026-10-12 21:00:00.000\t[P2P1]\tINFO\tnet.p2p\tsrc/p2p/net_node.inl:1\t"
                            "[100.90.146.87:18080 OUT] Binding on 10.20.30.40:47213 for AliceTower "
                            "data %s\n" % (cls.home / ".bitmonero")
-                           + "  [backup 2026-10-12 16:05:00] copied the node's settings\n")
+                           + "  [backup 2026-10-12 16:05:00] copied the node's settings\n"
+                           + "2026-10-12 21:00:01.000\t[P2P1]\tINFO\tnet.p2p\tsrc/p2p/net_node.inl:1\t"
+                             "Binding (IPv4) on 0.0.0.0:47213\n")
         cls.fake = FakeMonerod().start()
         cls.settings = Settings(base / "cfg" / "settings.json", log=lambda m: None).load()
         cls.settings.update({"source.rpc_url": cls.fake.url, "node.log_path": str(cls.log)})
-        reading = copy.deepcopy(helpers.HOST_READING)
-        reading["proc"]["exe"] = str(cls.home / "monero" / "monerod")
-        reading["proc"]["flags"] = ["--p2p-bind-ip", "10.20.30.40", "--p2p-bind-port", "47213",
-                                    "--data-dir", str(cls.home / ".bitmonero"), "--anonymous-inbound", ONION + ":18084,127.0.0.1:18084"]
-        reading["bind_if"] = {"name": "wg0", "kind": "vpn", "address": "10.20.30.40", "up": True}
-        cls.discover = StubDiscover([found_node(cls.fake.url, data_dir=str(cls.home / ".bitmonero"),
-                                                log_file=str(cls.log), p2p_bind=["10.20.30.40"])])
-        cls.app = App(cls.settings, port=0, state_dir=base / "state", log=lambda m: None,
-                      host_reader=StubHost(reading), discover=cls.discover)
+        cls.app = App(cls.settings, port=0, state_dir=base / "state", log=lambda m: None)
         cls.app.privacy = Redactor(home=str(cls.home), user="alice", real_name="Alice", host_name="AliceTower")
-        cls.app.poller.host_name = "AliceTower"
         cls.app.start(poll=False)
         cls.app.poller.poll_once()
         cls.port = cls.app.port
         conns = helpers.fixture("get_connections.json")
         conns = conns.get("result", conns)["connections"]
         cls.seeds = sorted({c["host"] for c in conns} | {c["peer_id"] for c in conns if c.get("peer_id")}
-                           | {"10.20.30.40", "47213", ONION, "AliceTower", "alice", str(cls.home)})
+                           | {"10.20.30.40", "47213", "AliceTower", "alice", str(cls.home)})
 
     @classmethod
     def tearDownClass(cls):
@@ -398,10 +397,9 @@ class ServerPrivacyTest(unittest.TestCase):
             st, _, raw = request(self.port, "GET", path)
             self.assertEqual(st, 200, path)
             out[path] = raw.decode()
-        for path in ("/api/discover", "/api/node-log?source=monerod&lines=50"):
-            st, _, raw = request(self.port, "GET", path, headers=WRITE)
-            self.assertEqual(st, 200, (path, raw[:200]))
-            out[path] = raw.decode()
+        st, _, raw = request(self.port, "GET", "/api/node-log?source=monerod&lines=50", headers=WRITE)
+        self.assertEqual(st, 200, raw[:200])
+        out["/api/node-log?source=monerod&lines=50"] = raw.decode()
         for name in ("print_cn", "bans", "sync_info", "print_pl", "status", "version", "print_pool_sh", "hard_fork_info"):
             st, _, raw = request(self.port, "POST", "/api/command", body={"name": name}, headers=WRITE)
             self.assertEqual(st, 200, (name, raw[:200]))
@@ -429,6 +427,8 @@ class ServerPrivacyTest(unittest.TestCase):
         self.assertTrue(json.loads(answers["/api/settings"])["values"]["display.privacy"])
         lines = json.loads(answers["/api/node-log?source=monerod&lines=50"])["lines"]
         self.assertTrue(any(TOKEN_RE.search(line) for line in lines), lines)
+        self.assertTrue(any(re.search(r"Binding \(IPv4\) on 0\.0\.0\.0:" + TOKEN_RE.pattern, line) for line in lines),
+                        "where the node listens: the address shown, its p2p port hidden")
         self.assertTrue(any(line.startswith("2026-10-12 21:00:00.000") for line in lines), "monerod's own times are UTC")
         self.assertTrue(any(re.search(r"\[backup 2026-10-12 \d\d:05:00 UTC\]", line) for line in lines), lines)
 

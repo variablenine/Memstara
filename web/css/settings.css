@@ -135,12 +135,3 @@
   .cmd-nav button[aria-current="true"] { border-left-color: var(--accent); }
   .cmd-kind { margin-left: 0; }
 }
-
-/* FIND MY NODE results */
-.found { display: grid; gap: 8px; margin-top: 10px; }
-.found[hidden] { display: none; }
-.found-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line-2); background: var(--bg-3); }
-.found-row p { font-size: var(--fs-1); color: var(--ink-2); overflow-wrap: anywhere; line-height: 1.5; }
-.found-row p:first-child { color: var(--ink); }
-.found[data-level="warn"] .fhelp { color: var(--warn); }
-.found[data-level="bad"] .fhelp { color: var(--bad-ink-2); }

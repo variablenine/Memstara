@@ -1,4 +1,4 @@
-// H · History: connections, mempool and traffic over 15 min / 1 h / 6 h / 24 h.
+// G · History: connections, mempool and traffic over 15 min / 1 h / 6 h / 24 h.
 // One range control above all three charts. Their newest point moves every second.
 import { $, setText } from "../dom.js";
 import { lineChart } from "../charts.js";
@@ -12,7 +12,7 @@ let busy = false;
 let again = false;       // asked again while a fetch was running
 let askedAt = 0;         // when the last fetch started (performance.now())
 // everything the server keeps a history of (memstara/history.py FIELDS)
-const FIELDS = ["out", "in", "tor", "pool", "rate_in", "rate_out", "latency", "cpu_temp_c", "node_cpu_pct"];
+const FIELDS = ["out", "in", "tor", "pool", "rate_in", "rate_out", "latency"];
 
 const LABEL = { 900: "15 MIN", 3600: "1 H", 21600: "6 H", 86400: "24 H" };
 

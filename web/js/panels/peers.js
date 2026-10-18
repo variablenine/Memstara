@@ -266,16 +266,9 @@ function peerTip(p) {
       { label: "ITS HEIGHT", value: f.num(p.height) },
       { label: "STATE", value: String(p.state || "—").toUpperCase() },
       { label: "DOWN / UP", value: `${f.rate(p.down_bps)} / ${f.rate(p.up_bps)}` },
-      { label: "ROUND TRIP", value: anon ? "THROUGH TOR, NOT MEASURED" : roundTrip(p) },
       { label: "PRUNED NODE", value: p.pruned ? "YES" : "NO" },
     ],
   };
-}
-
-// the kernel's smoothed round trip for this connection, plus packets it had to resend
-function roundTrip(p) {
-  if (!f.isNum(p.rtt_ms)) return "—";
-  return f.ms(p.rtt_ms) + (f.isNum(p.retrans) && p.retrans > 0 ? ` · ${f.plural(p.retrans, "RESEND", "RESENDS")}` : "");
 }
 
 function shortOnion(h) {
@@ -299,7 +292,7 @@ function fillTable(list) {
     keys.push(key);
     let tr = rowsShown.get(key);
     if (!tr) {
-      tr = el("tr", {}, ...Array.from({ length: 8 }, (_, i) => el("td", { class: i === 1 ? "l" : null })));
+      tr = el("tr", {}, ...Array.from({ length: 7 }, (_, i) => el("td", { class: i === 1 ? "l" : null })));
       rowsShown.set(key, tr);
     }
     const anon = p.kind === "tor" || p.kind === "i2p";
@@ -307,7 +300,7 @@ function fillTable(list) {
       p.dir === "out" ? "▸ OUT" : "◂ IN",
       anon ? shortOnion(p.host) : `${p.ip}${p.port ? ":" + p.port : ""}`,
       f.dur(p.age_s), f.num(p.height), String(p.state || "—").toUpperCase(),
-      f.rate(p.down_bps), f.rate(p.up_bps), anon ? "TOR" : f.ms(p.rtt_ms),
+      f.rate(p.down_bps), f.rate(p.up_bps),
     ];
     cells.forEach((v, i) => setText(tr.children[i], v));
   }
