@@ -1,0 +1,24 @@
+<!-- Memstara app icon: the brand mark (img/mark.svg) drawn as a little node network. Drawn for this app. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="70%">
+      <stop offset="0" stop-color="#1d1507"/>
+      <stop offset="0.55" stop-color="#080602"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3.4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="26" fill="url(#bg)"/>
+  <rect x="7" y="7" width="114" height="114" rx="25" fill="none" stroke="#ffb840" stroke-opacity="0.5" stroke-width="2"/>
+  <g filter="url(#glow)">
+    <path d="M34 88V40l30 27 30-27v48" fill="none" stroke="#ffb840" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <g fill="#000" stroke="#ffb840" stroke-width="4">
+      <circle cx="34" cy="88" r="6.5"/><circle cx="34" cy="40" r="6.5"/><circle cx="64" cy="67" r="6.5"/>
+      <circle cx="94" cy="40" r="6.5"/><circle cx="94" cy="88" r="6.5"/>
+    </g>
+    <circle cx="64" cy="103" r="5.5" fill="#ffb840"/>
+  </g>
+</svg>

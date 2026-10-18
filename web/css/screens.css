@@ -1,0 +1,130 @@
+/* Screens: the tab bar, one screen at a time (or all on one page), the hero
+   frame at the top of each screen, and the slow glow. AMOLED black ground:
+   panels are drawn with hairlines and light, not with grey fills. */
+
+/* ---- top chrome: the bar and the tabs stay in reach while scrolling ---- */
+.topbar { background: rgba(0, 0, 0, .92); backdrop-filter: blur(6px); }
+.tabs {
+  position: sticky; top: var(--chrome-h, 52px); z-index: 19;
+  display: flex; gap: 2px; padding: 0 16px; overflow-x: auto; scrollbar-width: none;
+  background: rgba(0, 0, 0, .92); backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+}
+.tabs::-webkit-scrollbar { display: none; }
+/* a soft fade at an edge while more tabs are hidden past it (tabs.js sets data-more) */
+.tabs::before, .tabs::after {
+  content: ""; position: sticky; z-index: 2; flex: none; width: 32px; pointer-events: none;
+  opacity: 0; transition: opacity .2s;
+}
+.tabs::before { left: 0; margin-right: -32px; background: linear-gradient(to right, var(--bg) 15%, transparent); }
+.tabs::after { right: 0; margin-left: -32px; background: linear-gradient(to left, var(--bg) 15%, transparent); }
+.tabs[data-more~="left"]::before, .tabs[data-more~="right"]::after { opacity: 1; }
+.tab {
+  position: relative; flex: none; display: flex; align-items: baseline; gap: 7px;
+  background: none; border: 0; padding: 11px 14px 10px; cursor: pointer; color: var(--ink-3);
+  font-family: var(--font-label); font-weight: 600; font-size: var(--fs-1); letter-spacing: .18em;
+}
+.tab-n { font-family: var(--font-mono); font-weight: 400; font-size: var(--fs-0); color: var(--ink-4); letter-spacing: .04em; }
+.tab:hover { color: var(--ink); }
+.tab:hover .tab-n { color: var(--ink-3); }
+.tab::after {   /* the lit bar under the open tab */
+  content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px;
+  background: var(--accent); opacity: 0; transform: scaleX(.3); transition: opacity .25s, transform .35s;
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), .8), 0 0 22px rgba(var(--accent-rgb), .45);
+}
+.tab[aria-selected="true"] { color: var(--accent); text-shadow: 0 0 12px rgba(var(--accent-rgb), .45); }
+.tab[aria-selected="true"] .tab-n { color: rgba(var(--accent-rgb), .7); }
+.tab[aria-selected="true"]::after { opacity: 1; transform: scaleX(1); }
+.tab:focus-visible { outline-offset: -3px; }
+.tab-flag { font-size: var(--fs-0); min-width: 0; }
+.tab[data-level="warn"] .tab-flag { color: var(--warn); }
+.tab[data-level="bad"] .tab-flag { color: var(--bad); }
+.tab[data-level="bad"] .tab-label { color: var(--bad-ink); }
+
+/* ---- screens ---- */
+.screens { display: block; }
+.screen { outline: none; }
+.screen > .grid { padding-top: var(--gap); }
+:root[data-layout="tabs"] .screen:not([hidden]) { animation: screen-in .35s ease-out; }
+@keyframes screen-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* all on one page: each screen gets a heading rule so the stack still reads as screens,
+   and a screen scrolled to (a tab click) stops just under the sticky bars */
+:root[data-layout="page"] .screen + .screen { border-top: 1px solid var(--line); margin-top: 6px; }
+:root[data-layout="page"] .screen { scroll-margin-top: calc(var(--chrome-h, 52px) + var(--tabs-h, 38px) + 4px); }
+:root[data-layout="page"] .tab[aria-selected="true"]::after { opacity: .35; }
+
+/* ---- panels on black ---- */
+.panel {
+  background:
+    linear-gradient(var(--line-2), var(--line-2)) top left / 12px 1px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) top left / 1px 12px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) top right / 12px 1px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) top right / 1px 12px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) bottom left / 12px 1px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) bottom left / 1px 12px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) bottom right / 12px 1px no-repeat,
+    linear-gradient(var(--line-2), var(--line-2)) bottom right / 1px 12px no-repeat,
+    linear-gradient(180deg, rgba(var(--accent-rgb), .035), transparent 120px),
+    #000;
+}
+.ph { background: linear-gradient(90deg, rgba(var(--accent-rgb), .06), transparent 60%); }
+.pid { box-shadow: 0 0 10px rgba(var(--accent-rgb), .45); }
+
+/* the glow: a soft light around each frame that slowly breathes. It is a layer
+   of its own whose opacity changes, so the browser only blends it (cheap). */
+:root[data-glow="on"] .panel::after {
+  content: ""; position: absolute; inset: -1px; pointer-events: none; z-index: 0;
+  box-shadow: 0 0 26px -6px rgba(var(--accent-rgb), .30), inset 0 0 24px -10px rgba(var(--accent-rgb), .16);
+  opacity: .45;
+}
+:root[data-glow="on"][data-motion="full"] .panel::after { animation: breathe var(--breathe) ease-in-out infinite; }
+:root[data-glow="on"][data-motion="full"] .hero::after { animation-duration: calc(var(--breathe) * .8); }
+:root[data-glow="on"] .hero::after {
+  box-shadow: 0 0 40px -8px rgba(var(--accent-rgb), .40), inset 0 0 40px -14px rgba(var(--accent-rgb), .22);
+}
+@keyframes breathe { 0%, 100% { opacity: .30; } 50% { opacity: 1; } }
+.panel > * { position: relative; z-index: 1; }
+
+/* a screen with a heads-up: its centrepiece's frame glows steady in the heads-up
+   colour. With a problem: in the problem colour, pulsing about once a second.
+   Healthy screens only breathe slowly. (The tab and the lamps carry ▲ / ■.) */
+.screen[data-level="warn"] .hero { border-color: rgba(var(--warn-rgb), .45); }
+.screen[data-level="bad"] .hero { border-color: rgba(var(--bad-rgb), .6); }
+:root[data-glow="on"] .screen[data-level="warn"] .hero::after {
+  box-shadow: 0 0 40px -8px rgba(var(--warn-rgb), .45), inset 0 0 40px -14px rgba(var(--warn-rgb), .24);
+}
+:root[data-glow="on"] .screen[data-level="bad"] .hero::after {
+  box-shadow: 0 0 46px -8px rgba(var(--bad-rgb), .6), inset 0 0 46px -12px rgba(var(--bad-rgb), .34);
+}
+:root[data-glow="on"][data-motion="full"] .screen[data-level="bad"] .hero::after { animation: alarm 1.2s ease-in-out infinite; }
+@keyframes alarm { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+/* lit problem lamps and the overall chip pulse the same way */
+:root[data-motion="full"] .lamp[data-state="bad"]:not([data-flash="on"]),
+:root[data-motion="full"] .overall[data-level="bad"] { animation: lit-alarm 1.2s ease-in-out infinite; }
+@keyframes lit-alarm { 50% { box-shadow: 0 0 28px rgba(var(--bad-rgb), .4), inset 0 0 22px rgba(var(--bad-rgb), .42); } }
+
+/* ---- hero frame: the big animated piece at the top of each screen ---- */
+.hero .hero-body { padding: 0; gap: 0; min-height: 360px; overflow: hidden; position: relative; }
+.hero.hero-tall .hero-body { min-height: 580px; }
+.hero .ph-tools { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.hero canvas { display: block; width: 100%; touch-action: pan-y; }
+.hero canvas:focus-visible { outline: 1px solid var(--accent); outline-offset: -2px; }
+/* a small corner readout over a hero picture */
+.hero-hud {
+  position: absolute; z-index: 2; pointer-events: none; font-family: var(--font-label); letter-spacing: var(--track);
+  font-size: var(--fs-0); color: var(--ink-3); text-transform: uppercase;
+}
+.hero-hint { color: var(--ink-4); font-size: var(--fs-0); font-family: var(--font-label); letter-spacing: var(--track); }
+
+@media (max-width: 899px) {
+  .topbar { position: static; }
+  .tabs { top: 0; padding: 0 8px; }
+  :root[data-layout="page"] .screen { scroll-margin-top: calc(var(--tabs-h, 38px) + 4px); }
+  .tab { padding: 10px 10px 9px; gap: 5px; }
+  .hero .hero-body { min-height: 300px; }
+  .hero.hero-tall .hero-body { min-height: 440px; }
+}
+
+@media (forced-colors: active) {
+  .tab[aria-selected="true"] { border-bottom: 2px solid CanvasText; }
+}

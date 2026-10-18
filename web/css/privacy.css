@@ -1,0 +1,78 @@
+/* Privacy mode (web/js/privacy.js). A hidden detail is a run of scrambled block glyphs
+   in the shape of what it hides (an address in four groups, a port in five), drawn from
+   the span's data-g with a two-colour split; now and then one tears for a moment. The
+   real text never reaches the window: the server sends only tokens. */
+:root { --rd-a: var(--accent-rgb); --rd-b: 92, 214, 255; }
+:root[data-accent="ice"] { --rd-b: 255, 72, 150; }
+
+.rd { position: relative; display: inline-block; white-space: nowrap; }
+.rd-v { position: relative; display: inline-block; letter-spacing: 0; font-variant-numeric: normal; }
+.rd-v::before {
+  content: attr(data-g); display: inline-block; opacity: .9;
+  text-shadow: -1px 0 rgba(var(--rd-a), .7), 1px 0 rgba(var(--rd-b), .6);
+}
+.rd-v::after {
+  content: attr(data-g); position: absolute; left: 0; top: 0; pointer-events: none;
+  color: rgb(var(--rd-b)); opacity: 0;
+}
+.rd-v.is-burst::before { animation: rd-jolt .3s steps(3, end) 1; }
+.rd-v.is-burst::after { animation: rd-tear .3s steps(4, end) 1; }
+@keyframes rd-jolt {
+  0% { transform: translateX(-2px); }
+  34% { transform: translateX(1px); }
+  67% { transform: translateX(-1px); }
+  100% { transform: none; }
+}
+@keyframes rd-tear {
+  0% { opacity: .9; clip-path: inset(10% 0 60% 0); transform: translateX(3px); }
+  25% { opacity: .8; clip-path: inset(55% 0 12% 0); transform: translateX(-3px); }
+  50% { opacity: .9; clip-path: inset(28% 0 42% 0); transform: translateX(2px); }
+  75% { opacity: .7; clip-path: inset(72% 0 4% 0); transform: translateX(-2px); }
+  100% { opacity: 0; clip-path: inset(50% 0 50% 0); transform: none; }
+}
+/* in a chart's SVG labels: the glyphs, in the second colour while they glitch */
+.rd-t.is-burst { fill: rgb(var(--rd-b)); }
+
+/* the switch in the top bar: lit while privacy mode is on */
+.btn-privacy[aria-pressed="true"] {
+  border-color: rgba(var(--accent-rgb), .7); color: var(--accent); background: rgba(var(--accent-rgb), .1);
+  text-shadow: -1px 0 rgba(var(--rd-a), .45), 1px 0 rgba(var(--rd-b), .45);
+}
+.btn-privacy[aria-pressed="true"] .tb-icon { animation: rd-blink 6s steps(1, end) infinite; }
+@keyframes rd-blink { 0%, 93% { opacity: 1; } 94% { opacity: .2; } 96% { opacity: 1; } 97% { opacity: .4; } }
+
+/* switching: the screen tears and goes dark, the window starts again in the other mode,
+   then comes back out of the dark the same way */
+.rd-flash { position: fixed; inset: 0; z-index: 96; pointer-events: none; overflow: hidden; }
+.rd-flash::before { content: ""; position: absolute; inset: 0; background: var(--bg); }
+.rd-flash[data-go="out"]::before { animation: rd-dark .64s steps(6, end) forwards; }
+.rd-flash[data-go="in"]::before { animation: rd-light .76s steps(7, end) forwards; }
+.rd-flash[data-still="yes"][data-go="out"]::before { animation: none; opacity: 1; }
+.rd-flash[data-still="yes"][data-go="in"]::before { animation: none; opacity: 0; }
+@keyframes rd-dark { 0% { opacity: 0; } 30% { opacity: .15; } 55% { opacity: .5; } 80% { opacity: .85; } 100% { opacity: 1; } }
+@keyframes rd-light { 0% { opacity: 1; } 40% { opacity: .9; } 70% { opacity: .45; } 100% { opacity: 0; } }
+.rd-flash i {
+  position: absolute; left: -10%; width: 120%; opacity: 0; mix-blend-mode: screen;
+  animation: rd-bar .34s steps(4, end) 1 both;
+}
+.rd-flash i[data-c="0"] { background: rgba(var(--rd-a), .85); }
+.rd-flash i[data-c="1"] { background: rgba(var(--rd-b), .7); }
+.rd-flash i[data-c="2"] { background: rgba(255, 255, 255, .5); }
+@keyframes rd-bar {
+  0% { opacity: 0; transform: translateX(-6%); }
+  25% { opacity: 1; transform: translateX(4%); }
+  50% { opacity: .6; transform: translateX(-3%); }
+  75% { opacity: .9; transform: translateX(2%); }
+  100% { opacity: 0; transform: none; }
+}
+
+/* settings that hold an address, a folder or a login are locked while it's on */
+.field[data-locked] input { opacity: .6; cursor: not-allowed; }
+.privacy-note { color: var(--ink-2); border: 1px solid rgba(var(--accent-rgb), .45); padding: 8px 10px; margin-bottom: 12px; font-size: var(--fs-1); letter-spacing: .04em; }
+
+@media (forced-colors: active) {
+  .rd-v::before { text-shadow: none; }
+}
+
+/* the clocks say UTC while it's on: a phone's top bar keeps that word too */
+@media (max-width: 899px) { html[data-privacy="on"] .clock-tag { display: inline; } }

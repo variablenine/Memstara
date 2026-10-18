@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en" data-accent="amber" data-motion="full" data-layout="tabs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#000000">
+  <meta name="referrer" content="no-referrer">
+  <title>Memstara</title>
+  <link rel="icon" href="img/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/panels.css">
+  <link rel="stylesheet" href="css/settings.css">
+  <link rel="stylesheet" href="css/screens.css">
+  <link rel="stylesheet" href="css/heroes/status.css">
+  <link rel="stylesheet" href="css/heroes/network.css">
+  <link rel="stylesheet" href="css/heroes/chain.css">
+  <link rel="stylesheet" href="css/heroes/mempool.css">
+  <link rel="stylesheet" href="css/heroes/traffic.css">
+  <link rel="stylesheet" href="css/heroes/bans.css">
+  <link rel="stylesheet" href="css/heroes/log.css">
+  <link rel="stylesheet" href="css/privacy.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <a class="skip" href="#screens">Skip to the screens</a>
+
+  <!-- Start-up check (optional, see settings: display.boot) -->
+  <div id="boot" class="boot" hidden>
+    <div class="boot-inner">
+      <div class="boot-title">MEMSTARA</div>
+      <ol id="boot-lines" class="boot-lines"></ol>
+      <div class="boot-hint">[ CLICK OR ANY KEY · SKIP ]</div>
+    </div>
+  </div>
+
+  <header class="topbar" id="topbar">
+    <div class="tb-left">
+      <img class="mark" src="img/mark.svg" alt="" width="22" height="22">
+      <div class="tb-titles">
+        <div class="tb-name">MEMSTARA</div>
+        <div class="tb-sub" id="tb-sub">—</div>
+      </div>
+    </div>
+    <div class="tb-right">
+      <div class="overall" id="overall" role="status" aria-live="polite" aria-atomic="true">
+        <span class="ov-glyph" aria-hidden="true">●</span>
+        <span class="ov-word">STARTING</span>
+        <span class="ov-count"></span>
+      </div>
+      <div class="mode" id="mode" title="Where the numbers come from"><span class="mode-word">—</span><span class="mode-where"></span><span class="mode-note"></span></div>
+      <div class="clock" id="clock">
+        <span class="clock-time">—</span>
+        <span class="clock-tag">LOCAL</span>
+      </div>
+    </div>
+    <div class="tb-actions">
+      <button class="btn btn-privacy" id="privacy" type="button" aria-pressed="false" aria-label="Privacy mode" title="Privacy mode: hides addresses, ports, names, folders and transaction ids, so the screens can be shown to other people">
+        <span class="tb-icon" aria-hidden="true">▚</span><span class="tb-word" aria-hidden="true"> PRIVACY</span>
+      </button>
+      <button class="btn" id="open-commands" type="button" aria-haspopup="dialog" aria-controls="commands" aria-label="Commands" title="Every monerod command">
+        <span class="tb-icon" aria-hidden="true">&gt;_</span><span class="tb-word" aria-hidden="true"> COMMANDS</span>
+      </button>
+      <button class="btn" id="open-settings" type="button" aria-haspopup="dialog" aria-controls="settings" aria-label="Settings" title="Settings">
+        <span class="tb-icon" aria-hidden="true">⚙</span><span class="tb-word" aria-hidden="true"> SETTINGS</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="conn-banner" id="conn-banner" hidden role="alert"></div>
+  <div class="conn-banner" id="conn-note" hidden role="status" data-level="info"></div>
+
+  <section class="alerts" id="alerts" aria-label="Active alerts">
+    <div class="alerts-head">
+      <span class="alerts-title">ALERTS</span>
+      <span class="alerts-tally" id="alerts-tally">—</span>
+    </div>
+    <ol class="alerts-list" id="alerts-list"></ol>
+  </section>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Screens">
+    <button class="tab" type="button" role="tab" id="tab-status" aria-controls="screen-status" aria-selected="false" tabindex="-1" data-tab="status"><span class="tab-n" aria-hidden="true">01</span><span class="tab-label">STATUS</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-network" aria-controls="screen-network" aria-selected="false" tabindex="-1" data-tab="network"><span class="tab-n" aria-hidden="true">02</span><span class="tab-label">NETWORK</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-chain" aria-controls="screen-chain" aria-selected="false" tabindex="-1" data-tab="chain"><span class="tab-n" aria-hidden="true">03</span><span class="tab-label">CHAIN</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-mempool" aria-controls="screen-mempool" aria-selected="false" tabindex="-1" data-tab="mempool"><span class="tab-n" aria-hidden="true">04</span><span class="tab-label">MEMPOOL</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-traffic" aria-controls="screen-traffic" aria-selected="false" tabindex="-1" data-tab="traffic"><span class="tab-n" aria-hidden="true">05</span><span class="tab-label">TRAFFIC</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-bans" aria-controls="screen-bans" aria-selected="false" tabindex="-1" data-tab="bans"><span class="tab-n" aria-hidden="true">06</span><span class="tab-label">BANS</span><span class="tab-flag" aria-hidden="true"></span></button>
+    <button class="tab" type="button" role="tab" id="tab-log" aria-controls="screen-log" aria-selected="false" tabindex="-1" data-tab="log"><span class="tab-n" aria-hidden="true">07</span><span class="tab-label">LOG</span><span class="tab-flag" aria-hidden="true"></span></button>
+  </nav>
+
+  <main class="screens" id="screens">
+    <section class="screen" id="screen-status" role="tabpanel" aria-labelledby="tab-status" data-screen="status" tabindex="-1">
+      <div class="grid">
+      <section class="panel hero span-2" data-hero="status" id="p-hero-status" aria-labelledby="h-hero-status">
+        <header class="ph">
+          <span class="pid">01</span>
+          <h2 id="h-hero-status">NODE STATUS</h2>
+          <span class="psub" id="hero-status-sub">—</span>
+          <span class="ph-tools" id="hero-status-tools"></span>
+        </header>
+        <div class="pb hero-body" id="hero-status"></div>
+      </section>
+      <section class="panel span-1" data-panel="lamps" id="p-lamps" aria-labelledby="h-lamps">
+        <header class="ph">
+          <span class="pid">A</span>
+          <h2 id="h-lamps">LAMP WALL</h2>
+          <span class="psub" id="lamps-sub">—</span>
+          <span class="ph-tools">
+            <button class="key" type="button" id="lamp-ack" title="Stop the flashing (changes nothing on the node)">ACK</button>
+            <button class="key" type="button" id="lamp-test" title="Light every lamp for two seconds">TEST</button>
+          </span>
+        </header>
+        <div class="pb">
+          <ol class="lamps" id="lamps" role="group" aria-label="Lamps"></ol>
+          <div class="lamps-foot" id="lamps-foot">—</div>
+        </div>
+      </section>
+      </div>
+    </section>
+    <section class="screen" id="screen-network" role="tabpanel" aria-labelledby="tab-network" data-screen="network" tabindex="-1">
+      <div class="grid">
+      <section class="panel hero span-full hero-tall" data-hero="network" id="p-hero-network" aria-labelledby="h-hero-network">
+        <header class="ph">
+          <span class="pid">02</span>
+          <h2 id="h-hero-network">NODE TREE</h2>
+          <span class="psub" id="hero-network-sub">—</span>
+          <span class="ph-tools" id="hero-network-tools"></span>
+        </header>
+        <div class="pb hero-body" id="hero-network"></div>
+      </section>
+      <section class="panel span-1" data-panel="peers" id="p-peers" aria-labelledby="h-peers">
+        <header class="ph">
+          <span class="pid">C</span>
+          <h2 id="h-peers">PEER SCOPE</h2>
+          <span class="psub" id="peers-sub" title="monerod RPC: get_connections, get_info">—</span>
+        </header>
+        <div class="pb">
+          <div class="peer-counts">
+            <div class="pc">
+              <div class="fig-label">OUTGOING</div>
+              <div class="pc-val"><span id="peers-out">—</span><span class="pc-of" id="peers-want"></span></div>
+              <div class="segs" id="peers-segs" aria-hidden="true"></div>
+              <div class="pc-note" id="peers-out-note"></div>
+            </div>
+            <div class="pc">
+              <div class="fig-label">INCOMING</div>
+              <div class="pc-val"><span id="peers-in">—</span></div>
+            </div>
+            <div class="pc">
+              <div class="fig-label">TOR SENDING</div>
+              <div class="pc-val"><span id="peers-tor">—</span></div>
+              <div class="pc-note" id="peers-tor-note"></div>
+            </div>
+          </div>
+          <div class="scope-wrap">
+            <svg class="scope" id="scope" viewBox="-110 -110 220 220" role="group" aria-label="Peer scope: one mark per connection. The arrow keys step through them."></svg>
+          </div>
+          <ul class="legend" id="scope-legend">
+            <li><span class="lg-dot lg-out"></span>OUTGOING</li>
+            <li><span class="lg-dot lg-in"></span>INCOMING</li>
+            <li><span class="lg-dia"></span>TOR</li>
+            <li><span class="lg-arc"></span>CLUSTER AT LIMIT</li>
+            <li><span class="lg-spy" aria-hidden="true">▲</span>ON THE SPY NODE LIST</li>
+          </ul>
+          <div class="spread" id="spread">—</div>
+          <div class="spread" id="peers-spy" data-level="warn" hidden></div>
+          <p class="pcap">Every dot is one connection. Peers on the same company's servers land at the same angle, so a pile-up at one angle is a possible spy cluster. Further from the centre means connected longer (rings: 10 min, 1 h, 6 h).</p>
+          <details class="tableview">
+            <summary>TABLE VIEW</summary>
+            <div class="tablewrap"><table id="peers-table"><thead><tr><th>DIR</th><th>ADDRESS</th><th>FOR</th><th>HEIGHT</th><th>STATE</th><th>DOWN</th><th>UP</th></tr></thead><tbody></tbody></table></div>
+          </details>
+        </div>
+      </section>
+      <section class="panel span-1" data-panel="route" id="p-route" aria-labelledby="h-route">
+        <header class="ph">
+          <span class="pid">D</span>
+          <h2 id="h-route">ROUTE</h2>
+          <span class="psub">HOW YOUR NODE IS CONNECTED</span>
+        </header>
+        <div class="pb">
+          <svg class="mimic" id="mimic" viewBox="0 0 320 206" role="img" aria-label="Diagram of how your node is connected"></svg>
+          <dl class="kv" id="route-kv"></dl>
+          <p class="pcap">Solid lines are working links, lines lit in the heads-up or problem colour need a look, and dashed outlines are parts the dashboard can't see yet.</p>
+        </div>
+      </section>
+      </div>
+    </section>
+    <section class="screen" id="screen-chain" role="tabpanel" aria-labelledby="tab-chain" data-screen="chain" tabindex="-1">
+      <div class="grid">
+      <section class="panel hero span-full" data-hero="chain" id="p-hero-chain" aria-labelledby="h-hero-chain">
+        <header class="ph">
+          <span class="pid">03</span>
+          <h2 id="h-hero-chain">BLOCK STREAM</h2>
+          <span class="psub" id="hero-chain-sub">—</span>
+          <span class="ph-tools" id="hero-chain-tools"></span>
+        </header>
+        <div class="pb hero-body" id="hero-chain"></div>
+      </section>
+      <section class="panel span-2" data-panel="chain" id="p-chain" aria-labelledby="h-chain">
+        <header class="ph">
+          <span class="pid">B</span>
+          <h2 id="h-chain">CHAIN</h2>
+          <span class="psub" id="chain-sub" title="monerod RPC: get_block_headers_range, get_last_block_header">—</span>
+        </header>
+        <div class="pb chain-body">
+          <div class="chain-top">
+            <div class="figure">
+              <div class="fig-label">HEIGHT</div>
+              <div class="fig-value" id="chain-height">—</div>
+              <div class="fig-note" id="chain-sync">—</div>
+              <div class="meter" id="chain-meter" aria-hidden="true"><span></span></div>
+            </div>
+            <div class="blockring" id="blockring">
+              <svg viewBox="0 0 120 120" aria-hidden="true">
+                <circle class="br-track" cx="60" cy="60" r="50"></circle>
+                <circle class="br-arc" id="br-arc" cx="60" cy="60" r="50" pathLength="100"></circle>
+                <g id="br-ticks"></g>
+              </svg>
+              <div class="br-center">
+                <div class="fig-label">NEW BLOCK</div>
+                <div class="br-age" id="br-age">—</div>
+                <div class="fig-note" id="br-note">AGO</div>
+              </div>
+            </div>
+            <dl class="kv chain-kv">
+              <div><dt>CHANCE OF A WAIT THIS LONG</dt><dd id="chain-odds">—</dd></div>
+              <div><dt>AVERAGE GAP</dt><dd id="chain-avg">—</dd></div>
+              <div><dt>BLOCKS REPLACED · 24 H</dt><dd id="chain-reorg">—</dd></div>
+              <div><dt>NETWORK HASHRATE</dt><dd id="chain-hash">—</dd></div>
+              <div title="Monero's block size limit moves with use. A block can reach your node's median block size (never under 300 kB) with the full reward; past that the miner's reward shrinks, up to the biggest size allowed: twice the median."><dt>FULL REWARD UP TO</dt><dd id="chain-median">—</dd></div>
+              <div title="Monero's block size limit moves with use. A block can reach your node's median block size (never under 300 kB) with the full reward; past that the miner's reward shrinks, up to the biggest size allowed: twice the median."><dt>BIGGEST BLOCK ALLOWED</dt><dd id="chain-size">—</dd></div>
+            </dl>
+          </div>
+          <div class="tape-wrap">
+            <svg class="tape" id="tape" role="group" aria-label="Recent blocks. Tab to the newest, then the arrow keys step through them."></svg>
+          </div>
+          <p class="pcap" id="tape-cap">Each bar is one block, oldest on the left. Taller bars are bigger blocks; the space between bars is the wait between them. The shaded strip on the right is the wait for the next block, growing live.</p>
+          <details class="tableview">
+            <summary>TABLE VIEW</summary>
+            <div class="tablewrap"><table id="tape-table"><thead><tr><th>HEIGHT</th><th>TIME</th><th>WAIT</th><th>TXS</th><th>SIZE</th><th>REWARD</th></tr></thead><tbody></tbody></table></div>
+          </details>
+        </div>
+      </section>
+      <section class="panel span-1" data-panel="system" id="p-system" aria-labelledby="h-system">
+        <header class="ph">
+          <span class="pid">K</span>
+          <h2 id="h-system">SYSTEM</h2>
+          <span class="psub" id="system-sub" title="monerod RPC: get_info, get_bans, get_fee_estimate, hard_fork_info">—</span>
+        </header>
+        <div class="pb">
+          <dl class="kv kv-wide" id="sys-kv"></dl>
+          <div class="disk">
+            <div class="disk-head"><span class="fig-label">DISK</span><span id="disk-text">—</span></div>
+            <div class="diskbar" id="diskbar" aria-hidden="true"><span class="db-chain"></span><span class="db-free"></span></div>
+            <div class="disk-legend"><span><span class="lg-sq db-chain"></span>BLOCKCHAIN</span><span><span class="lg-sq db-free"></span>FREE</span><span><span class="lg-tick"></span>LIMITS</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="panel span-full" data-panel="flood" id="p-flood" aria-labelledby="h-flood">
+        <header class="ph">
+          <span class="pid">L</span>
+          <h2 id="h-flood">BLACK MARBLE WATCH</h2>
+          <span class="psub" id="flood-sub" title="monerod RPC: get_output_distribution">—</span>
+        </header>
+        <div class="pb">
+          <div class="flood-top">
+            <div class="figure" id="flood-fig">
+              <div class="fig-label">A NEW 16-MEMBER RING WORKS LIKE</div>
+              <div class="fig-value" id="flood-rings">—</div>
+              <div class="fig-note" id="flood-note">—</div>
+              <div class="ringdots" id="flood-dots" role="img" aria-label="Ring members">
+                <span class="rd rd-real"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span><span class="rd"></span>
+              </div>
+              <div class="meter" id="flood-meter" aria-hidden="true" hidden><span></span></div>
+            </div>
+            <dl class="kv" id="flood-kv"></dl>
+            <figure class="flood-days">
+              <figcaption><span class="hc-title">NEW OUTPUTS PER 24 H · LAST 30 DAYS</span>
+                <span class="legend-inline"><span class="lg-line s1"></span>UP TO A USUAL DAY <span class="lg-line s2"></span>ABOVE IT</span></figcaption>
+              <svg class="fchart" id="flood-chart" role="group" aria-label="New outputs in each of the last 30 days. Tab to the newest, then the arrow keys step through them."></svg>
+            </figure>
+          </div>
+          <p class="pcap">A black marble flood is one sender making a great many outputs so that other people's wallets pick theirs as decoys, and every decoy they own is one they can rule out. This counts the outputs in each block and works out how many of the decoys a wallet would pick right now come from outputs above a usual day, weighted the way wallets pick (mostly from the last few days). Nobody can see who made those outputs, so a busy spell of ordinary use reads the same.</p>
+          <details class="tableview">
+            <summary>TABLE VIEW</summary>
+            <div class="tablewrap"><table id="flood-table"><thead><tr><th>24 H ENDING</th><th>NEW OUTPUTS</th><th>AGAINST A USUAL DAY</th></tr></thead><tbody></tbody></table></div>
+          </details>
+        </div>
+      </section>
+      </div>
+    </section>
+    <section class="screen" id="screen-mempool" role="tabpanel" aria-labelledby="tab-mempool" data-screen="mempool" tabindex="-1">
+      <div class="grid">
+      <section class="panel hero span-2" data-hero="mempool" id="p-hero-mempool" aria-labelledby="h-hero-mempool">
+        <header class="ph">
+          <span class="pid">04</span>
+          <h2 id="h-hero-mempool">TRANSACTION POOL</h2>
+          <span class="psub" id="hero-mempool-sub">—</span>
+          <span class="ph-tools" id="hero-mempool-tools"></span>
+        </header>
+        <div class="pb hero-body" id="hero-mempool"></div>
+      </section>
+      <section class="panel span-1" data-panel="mempool" id="p-mempool" aria-labelledby="h-mempool">
+        <header class="ph">
+          <span class="pid">H</span>
+          <h2 id="h-mempool">MEMPOOL</h2>
+          <span class="psub" id="mempool-sub" title="monerod RPC: get_transaction_pool_stats">WAITING TO GO INTO A BLOCK</span>
+        </header>
+        <div class="pb">
+          <div class="figrow">
+            <div class="figure">
+              <div class="fig-label">WAITING</div>
+              <div class="fig-value" id="mp-txs">—</div>
+              <div class="fig-note" id="mp-bytes">—</div>
+            </div>
+            <dl class="kv">
+              <div><dt>OLDEST</dt><dd id="mp-oldest">—</dd></div>
+              <div><dt>OVER 10 MIN</dt><dd id="mp-10m">—</dd></div>
+              <div><dt>DOUBLE SPENDS</dt><dd id="mp-ds">—</dd></div>
+              <div><dt>NOT SENT ON YET</dt><dd id="mp-nr">—</dd></div>
+            </dl>
+          </div>
+          <svg class="histo" id="mp-histo" role="group" aria-label="How long transactions have been waiting. The arrow keys step through the bars."></svg>
+          <p class="pcap" id="mp-cap">How long the waiting transactions have been in the pool, newest on the left. A block normally clears most of them.</p>
+        </div>
+      </section>
+      </div>
+    </section>
+    <section class="screen" id="screen-traffic" role="tabpanel" aria-labelledby="tab-traffic" data-screen="traffic" tabindex="-1">
+      <div class="grid">
+      <section class="panel hero span-full" data-hero="traffic" id="p-hero-traffic" aria-labelledby="h-hero-traffic">
+        <header class="ph">
+          <span class="pid">05</span>
+          <h2 id="h-hero-traffic">LIVE TRAFFIC</h2>
+          <span class="psub" id="hero-traffic-sub">—</span>
+          <span class="ph-tools" id="hero-traffic-tools"></span>
+        </header>
+        <div class="pb hero-body" id="hero-traffic"></div>
+      </section>
+      <section class="panel span-1" data-panel="traffic" id="p-traffic" aria-labelledby="h-traffic">
+        <header class="ph">
+          <span class="pid">F</span>
+          <h2 id="h-traffic">TRAFFIC</h2>
+          <span class="psub" id="traffic-sub" title="monerod RPC: get_net_stats, get_limit">—</span>
+        </header>
+        <div class="pb">
+          <div class="figrow">
+            <div class="figure">
+              <div class="fig-label"><span class="lg-line s1"></span>DOWN</div>
+              <div class="fig-value" id="tr-in">—</div>
+              <div class="fig-note" id="tr-in-total">—</div>
+            </div>
+            <div class="figure">
+              <div class="fig-label"><span class="lg-line s2"></span>UP</div>
+              <div class="fig-value" id="tr-out">—</div>
+              <div class="fig-note" id="tr-out-total">—</div>
+            </div>
+          </div>
+          <div class="chart" id="tr-spark"></div>
+          <p class="pcap">Data your node downloads and uploads right now, over the last 15 minutes. Uploading more than you download is normal for a node that helps others sync.</p>
+        </div>
+      </section>
+      <section class="panel span-2" data-panel="history" id="p-history" aria-labelledby="h-history">
+        <header class="ph">
+          <span class="pid">G</span>
+          <h2 id="h-history">HISTORY</h2>
+          <span class="psub" id="history-sub">—</span>
+        </header>
+        <div class="pb">
+          <div class="seg-ctl" role="radiogroup" aria-label="Time range" id="hist-range">
+            <button type="button" role="radio" data-w="900">15 MIN</button>
+            <button type="button" role="radio" data-w="3600" aria-checked="true">1 H</button>
+            <button type="button" role="radio" data-w="21600">6 H</button>
+            <button type="button" role="radio" data-w="86400">24 H</button>
+          </div>
+          <div class="hist-charts">
+            <figure class="hchart">
+              <figcaption><span class="hc-title">CONNECTIONS</span>
+                <span class="legend-inline"><span class="lg-line s1"></span>OUTGOING <span class="lg-line s2"></span>INCOMING</span></figcaption>
+              <div class="chart" id="hc-peers"></div>
+            </figure>
+            <figure class="hchart">
+              <figcaption><span class="hc-title">MEMPOOL · TRANSACTIONS WAITING</span></figcaption>
+              <div class="chart" id="hc-pool"></div>
+            </figure>
+            <figure class="hchart">
+              <figcaption><span class="hc-title">TRAFFIC</span>
+                <span class="legend-inline"><span class="lg-line s1"></span>DOWN <span class="lg-line s2"></span>UP</span></figcaption>
+              <div class="chart" id="hc-traffic"></div>
+            </figure>
+          </div>
+          <p class="pcap">Point at a chart to read the exact numbers at that moment. Gaps are times the node wasn't answering.</p>
+        </div>
+      </section>
+      </div>
+    </section>
+    <section class="screen" id="screen-bans" role="tabpanel" aria-labelledby="tab-bans" data-screen="bans" tabindex="-1">
+      <div class="grid">
+      <section class="panel hero span-2" data-hero="bans" id="p-hero-bans" aria-labelledby="h-hero-bans">
+        <header class="ph">
+          <span class="pid">06</span>
+          <h2 id="h-hero-bans">BAN CLOCK</h2>
+          <span class="psub" id="hero-bans-sub">—</span>
+          <span class="ph-tools" id="hero-bans-tools"></span>
+        </header>
+        <div class="pb hero-body" id="hero-bans"></div>
+      </section>
+      <section class="panel span-1" data-panel="bans" id="p-bans" aria-labelledby="h-bans">
+        <header class="ph">
+          <span class="pid">E</span>
+          <h2 id="h-bans">BAN LIST</h2>
+          <span class="psub" id="bans-sub" title="monerod RPC: get_bans (the console's bans), get_connections">WHAT YOUR NODE IS BANNING · READ-ONLY</span>
+        </header>
+        <div class="pb">
+          <div class="ctl-block">
+            <div class="ctl-title">BANNED · 24 H OR LESS LEFT</div>
+            <ul class="ctl-list" id="ban-list"></ul>
+            <p class="ctl-hint" id="ban-long"></p>
+          </div>
+          <div class="ctl-block">
+            <div class="ctl-title">AT THE LIMITS NOW</div>
+            <ul class="ctl-list" id="ban-flagged"></ul>
+            <p class="ctl-hint">Too many connections from one company's servers (the ECLIPSE lamps). Memstara only reads, so it can't ban them; monerod's own console can (ban and unban).</p>
+          </div>
+          <div class="ctl-block ctl-wide" id="ban-spy-block">
+            <div class="ctl-title">MRL SPY NODE LIST</div>
+            <dl class="kv">
+              <div><dt>THE LIST</dt><dd id="ban-spy-list">—</dd></div>
+              <div><dt>YOUR NODE BANS</dt><dd id="ban-spy-bans">—</dd></div>
+              <div><dt>CONNECTED NOW</dt><dd id="ban-spy-now">—</dd></div>
+            </dl>
+            <p class="ctl-hint" id="ban-spy-hint">Nodes the Monero Research Lab found acting like spy nodes. The list comes with Memstara, unchanged (third_party/mrl-ban-list), and Memstara only flags the peers on it. To ban them, start monerod with --enable-dns-blocklist (the same list, kept current over DNS; mainnet only, and with --proxy only alongside --proxy-allow-dns-leaks) or with --ban-list and this file.</p>
+          </div>
+          <div class="ctl-row ctl-foot">
+            <button class="btn" type="button" id="ban-all">ALL READ-ONLY COMMANDS</button>
+          </div>
+        </div>
+      </section>
+      </div>
+    </section>
+    <section class="screen" id="screen-log" role="tabpanel" aria-labelledby="tab-log" data-screen="log" tabindex="-1">
+      <div class="grid">
+      <section class="panel hero span-full" data-hero="log" id="p-hero-log" aria-labelledby="h-hero-log">
+        <header class="ph">
+          <span class="pid">07</span>
+          <h2 id="h-hero-log">EVENT TIMELINE</h2>
+          <span class="psub" id="hero-log-sub">—</span>
+          <span class="ph-tools" id="hero-log-tools"></span>
+        </header>
+        <div class="pb hero-body" id="hero-log"></div>
+      </section>
+      <section class="panel span-full" data-panel="events" id="p-events" aria-labelledby="h-events">
+        <header class="ph">
+          <span class="pid">I</span>
+          <h2 id="h-events">LOG</h2>
+          <span class="psub" id="events-sub">—</span>
+        </header>
+        <div class="pb">
+          <ol class="events" id="events"></ol>
+        </div>
+      </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar" id="statusbar">
+    <div class="sb-vitals" id="sb-vitals">—</div>
+    <div class="sb-plate" id="sb-plate">—</div>
+  </footer>
+
+  <!-- Settings drawer -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="settings" id="settings" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
+    <header class="set-head">
+      <h2 id="set-title">SETTINGS</h2>
+      <span class="set-state" id="set-state"></span>
+      <button class="btn" type="button" id="close-settings">CLOSE</button>
+    </header>
+    <div class="set-body">
+      <nav class="set-nav" id="set-nav" aria-label="Settings sections"></nav>
+      <form class="set-form" id="set-form" novalidate></form>
+    </div>
+    <footer class="set-foot">
+      <span class="set-msg" id="set-msg" role="status" aria-live="polite"></span>
+      <button class="btn" type="button" id="set-revert">UNDO CHANGES</button>
+      <button class="btn btn-primary" type="button" id="set-save">SAVE</button>
+    </footer>
+  </aside>
+
+  <!-- Command drawer: every monerod console command -->
+  <div class="scrim" id="cmd-scrim" hidden></div>
+  <aside class="settings commands" id="commands" role="dialog" aria-modal="true" aria-labelledby="cmd-title" hidden>
+    <header class="set-head">
+      <h2 id="cmd-title">COMMANDS</h2>
+      <span class="set-state">MONEROD'S OWN · NOTHING MORE</span>
+      <button class="btn" type="button" id="close-commands">CLOSE</button>
+    </header>
+    <div class="set-body">
+      <nav class="set-nav cmd-nav" aria-label="Commands">
+        <div class="cmd-search">
+          <label class="sr-only" for="cmd-find">Find a command</label>
+          <input class="ctl-input" id="cmd-find" type="search" placeholder="FIND" autocomplete="off" spellcheck="false">
+        </div>
+        <div id="cmd-list"></div>
+      </nav>
+      <div class="set-form cmd-main" id="cmd-main"></div>
+    </div>
+  </aside>
+
+  <!-- Confirm step for turning privacy mode off: needs a typed word, so a stray key press can't set it off -->
+  <dialog class="confirm" id="confirm" aria-labelledby="cf-title">
+    <h2 id="cf-title">—</h2>
+    <p class="cf-body" id="cf-body"></p>
+    <label class="cf-label" for="cf-word" id="cf-label">TYPE — TO CONFIRM</label>
+    <input class="ctl-input" id="cf-word" type="text" autocomplete="off" spellcheck="false">
+    <p class="cf-result" id="cf-result" role="status" aria-live="polite"></p>
+    <div class="cf-actions">
+      <button class="btn" type="button" id="cf-no">CANCEL</button>
+      <button class="btn btn-danger" type="button" id="cf-yes" disabled>—</button>
+    </div>
+  </dialog>
+
+  <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+  <div class="fx-scan" aria-hidden="true"></div>
+  <!-- privacy mode switching: the screen glitches away and back (web/js/privacy.js) -->
+  <div class="rd-flash" id="rd-flash" aria-hidden="true" hidden></div>
+</body>
+</html>
