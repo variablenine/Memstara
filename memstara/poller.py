@@ -34,7 +34,8 @@ from .logevents import NodeLog
 from .pool import MINED_KEPT, PoolList
 from .rpc import RpcClient, RpcError, on_this_computer
 from .settings import DEFAULTS, node_log_path
-from .util import clock_style
+from .spylist import SpyList
+from .util import clock_style, duration_text
 
 SLOW_CALLS = {  # method -> seconds between calls
     "get_bans": 60,
@@ -59,6 +60,8 @@ ARRIVAL_MAX_NEW = 3         # more new (or replaced) blocks than this at once is
 STEADY_MIN_S = 5            # arrival times only when the poll before answered within max(this, 3 polls)
 MAX_EVENTS = 200
 PEER_EVENTS_EVERY_S = 5     # peers joining and leaving go in one event per this many seconds at most
+SPY_EVENT_EVERY_S = 3600    # a peer on the spy node list connecting: one event per address per hour at most
+SPY_LONG_S = 120            # one first read after this long connected "is connected (for ...)", not "connected"
 MAX_WAIT_S = 20             # the longest the window's request for a newer snapshot is held
 LOG_EVENTS_PER_READ = 20    # monerod's log lines shown as events per poll; the rest are counted
 MONEROD_OUT_PEERS = 12      # monerod's own default (P2P_DEFAULT_CONNECTIONS_COUNT, cryptonote_config.h)
@@ -97,12 +100,13 @@ def test_connection(url: str, user: str, password: str, timeout: float) -> dict:
 
 class Poller:
     def __init__(self, settings, *, clock=time.time, state_dir: Path | None = None, log=None,
-                 node_log=None):
+                 node_log=None, spy=None):
         self.settings = settings
         self.clock = clock
         self.state_dir = Path(state_dir) if state_dir else None
         self.log = log or (lambda msg: print(msg, file=sys.stderr))
         self.node_log = node_log or NodeLog(settings.get("node.log_path"))   # tests pass a stand-in
+        self.spy = spy or SpyList()   # the bundled spy node list (spylist.py), read once
         self._lock = threading.Lock()
         self._new_snapshot = threading.Condition(self._lock)
         self._seq = 0                 # the number of the latest snapshot
@@ -234,6 +238,8 @@ class Poller:
         self.peer_joined: set = set()    # joined and left since the last peer event
         self.peer_left: set = set()
         self.peer_event_t = None
+        self.spy_prev: set = set()      # addresses on the spy node list connected at the last reading
+        self.spy_said: dict = {}        # address -> when its last spy-list event went out
         self.synced_prev = None
         self.bootstrap_prev = None     # the bootstrap node answering get_info last time, or None
         self.node_last: dict = {}
@@ -382,7 +388,9 @@ class Poller:
         if not restricted:
             try:
                 parts["peers"] = adapter.parse_connections(self._call("get_connections"))
+                self.spy.mark(parts["peers"]["list"])
                 self._peer_events(parts["peers"]["list"], now)
+                self._spy_events(parts["peers"]["list"], now)
             except RpcError:
                 self._forget_peers()
         if bootstrap is not None and parts["peers"]["out_by_kind"]:
@@ -562,6 +570,7 @@ class Poller:
         """The peer list couldn't be read: start over from the next one that can."""
         self.peer_ids_prev = None
         self.peer_joined, self.peer_left = set(), set()
+        self.spy_prev = set()
 
     def _peer_events(self, peers, now):
         """Peers joining and leaving, as one event per PEER_EVENTS_EVERY_S at most, so
@@ -598,6 +607,27 @@ class Poller:
             bits.append("%d left" % len(left))
         kind = "peer_out" if j_out else "peer_in" if j_in else "peer_gone"
         self.add_event(kind, " · ".join(bits), "info", now)
+
+    def _spy_events(self, peers, now):
+        """An event when a peer on the spy node list connects: once per address an hour at most,
+        so one that keeps reconnecting doesn't fill the event list."""
+        here = {}
+        for p in peers:
+            if p.get("spy"):
+                here.setdefault(p["ip"], (p["dir"], p.get("age_s")))
+        self.spy_said = {ip: t for ip, t in self.spy_said.items() if 0 <= now - t < SPY_EVENT_EVERY_S}
+        for ip, (d, age) in sorted(here.items()):
+            if ip in self.spy_prev or ip in self.spy_said:
+                continue
+            self.spy_said[ip] = now
+            way = "outgoing" if d == "out" else "incoming"
+            # one first read after it had been connected a while (at start, or after a gap) says for how long
+            if isinstance(age, int) and age >= SPY_LONG_S:
+                text = "A peer on the MRL spy node list is connected: %s (%s, for %s)" % (ip, way, duration_text(age))
+            else:
+                text = "A peer on the MRL spy node list connected: %s (%s)" % (ip, way)
+            self.add_event("spy", text + ". Your node doesn't ban it", "warn", now)
+        self.spy_prev = set(here)
 
     def _elsewhere_notes(self, vals, now, url, answering):
         """Once per node: that its RPC address isn't on this computer, and what anyone else on
@@ -677,6 +707,9 @@ class Poller:
 
         # ---- Tor sending
         peers = parts["peers"]
+        listed = peers.get("out_by_kind") is not None    # get_connections was read this time
+        peers["spy"] = self.spy.part(peers["list"] if answering and listed else None,
+                                     self.slow.get("get_bans") if not restricted else None)
         tor_count = peers["out_by_kind"]["tor"] if peers.get("out_by_kind") else None
         i2p_count = peers["out_by_kind"]["i2p"] if peers.get("out_by_kind") else 0
         if tor_count:
@@ -727,6 +760,8 @@ class Poller:
             "restarts": self.restarts if not restricted else [],
             "out16": spread["out16"] if spread else None, "in24": spread["in24"] if spread else None,
             "flood": chain["flood"] if answering else None,
+            "spy": ([(p["dir"], p["ip"]) for p in peers["list"] if p.get("spy")]
+                    if answering and listed and self.spy.state == "ok" else None),
         })
         cfg = cfg_from_settings(vals)
         cfg["out_wanted"] = node["out_wanted"]

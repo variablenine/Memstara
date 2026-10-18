@@ -121,6 +121,7 @@ class FakeMonerod:
         self.requests: list = []
         self.limit = {"limit_down": 8192, "limit_up": 2048}
         self.mining = None                       # dict while mining (set by a test)
+        self.fail: set = set()                   # JSON-RPC methods that answer with an error (set by a test)
         self.pool = [POOL_TX]
         self.pool_txs: dict = {}                 # hash -> what get_transactions and the totals need
         self.real_txs = fixture(POOL_FIXTURE)["txs"]
@@ -291,6 +292,8 @@ class FakeMonerod:
         with self.lock:
             if method not in JSON_RPC or (self.restricted and method in UNRESTRICTED_ONLY):
                 return {"error": {"code": -32601, "message": "Method not found"}}
+            if method in self.fail:
+                return {"error": {"code": -1, "message": "Failed"}}
             top = self.top
             if method == "get_info":
                 r = copy.deepcopy(self.info)

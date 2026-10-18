@@ -13,6 +13,7 @@ import unittest.mock
 from pathlib import Path
 
 import helpers
+import test_spylist
 from helpers import WRITE, get_json, request
 from fake_monerod import POOL_TX, FakeMonerod
 from memstara.app import App
@@ -20,9 +21,12 @@ from memstara.history import FIELDS
 from memstara.lamps import LAMPS
 from memstara.logevents import NodeLog
 from memstara.pool import FLAG_NOT_RELAYED, FLAG_TIME_GUESSED
-from memstara.poller import BOOTSTRAP_FORWARDED, LOG_EVENTS_PER_READ, NODE_KEYS
+from memstara.poller import BOOTSTRAP_FORWARDED, LOG_EVENTS_PER_READ, NODE_KEYS, SPY_EVENT_EVERY_S
 from memstara.rpc import READ_ALLOWED
 from memstara.settings import DEFAULTS, Settings
+from memstara.spylist import SpyList
+from memstara.util import duration_text
+from test_alerts import FIX as SPY_FIX
 
 TOP_KEYS = ["v", "generated", "t", "level", "source", "node", "chain", "peers", "mempool", "traffic", "alerts",
             "lamps", "events", "hist", "clock_style", "seq"]
@@ -31,7 +35,7 @@ POOL_LIST_KEYS = {"list", "list_wanted", "list_cut", "mined", "check"}
 SOURCE_KEYS = {"mode", "rpc", "answering", "error", "latency_ms", "restricted", "last_ok", "poll_s",
                "dashboard_version", "bootstrap"}
 LAMP_IDS = ["node", "peers", "sync", "block", "disk", "reorg", "double_spend", "restarts", "spread_out", "spread_in",
-            "tor", "flood"]
+            "tor", "flood", "spy"]
 
 
 def log_line(t, level, text, cat="global", loc="src/p2p/net_node.inl:340"):
@@ -136,8 +140,13 @@ class SnapshotTest(unittest.TestCase):
         self.assertEqual(chain["flood"], {"state": "filling", "progress": 0.3})
         self.assertEqual(chain["median_weight"], 300000)
         self.assertEqual(chain["max_weight"], 600000)
-        self.assertEqual(set(snap["peers"]), {"list", "spread", "out_by_kind", "in_by_kind"})
+        self.assertEqual(set(snap["peers"]), {"list", "spread", "out_by_kind", "in_by_kind", "spy"})
         self.assertEqual(len(snap["peers"]["list"]), 54)
+        # the bundled spy node list: none of the made-up peers is on it, and the made-up bans none of it
+        self.assertEqual(snap["peers"]["spy"], {"state": "ok", "version": "2", "date": "2025-12-10", "entries": 431,
+                                                "ranges": 14, "node_bans": 0, "out": 0, "in": 0})
+        self.assertFalse(any(p["spy"] for p in snap["peers"]["list"]))
+        self.assertEqual(lamps_by_id(snap)["spy"]["value"], "NONE CONNECTED")
         self.assertIn("histo_98pc", snap["mempool"])
         self.assertLessEqual(POOL_LIST_KEYS, set(snap["mempool"]))
         self.assertEqual([e[0] for e in snap["mempool"]["list"]], [POOL_TX[:16]])
@@ -273,10 +282,12 @@ class RestrictedTest(unittest.TestCase):
             self.assertIsNone(snap["peers"]["spread"])
             self.assertIsNone(snap["node"]["free_bytes"])
             self.assertIsNone(snap["node"]["bans"])
+            self.assertEqual((snap["peers"]["spy"]["node_bans"], snap["peers"]["spy"]["out"]), (None, None))
             self.assertEqual(snap["alerts"], [], "missing data must not fire peers/disk alerts")
             lamps = lamps_by_id(snap)
             self.assertEqual((lamps["node"]["state"], lamps["node"]["value"]), ("ok", "RESTRICTED"))
             self.assertEqual(lamps["peers"]["state"], "off")
+            self.assertEqual((lamps["spy"]["state"], lamps["spy"]["value"]), ("off", "NO DATA"))
             self.assertIn("restricted RPC port", " ".join(e["text"] for e in snap["events"]))
             self.assertNotIn("get_connections", rig.fake.calls)
             # a restricted port gives the RingCT output counts too (amount 0 only), so the black
@@ -288,6 +299,117 @@ class RestrictedTest(unittest.TestCase):
             self.assertTrue(all(p["amounts"] == [0] for m, p in rig.fake.requests if m == "get_output_distribution"))
         finally:
             rig.close()
+
+
+class SpyListTest(unittest.TestCase):
+    """Peers on the MRL spy node list, here a made-up stand-in for it: one outgoing peer by
+    its address and one incoming by its range, both in the fake node's connections."""
+
+    def setUp(self):
+        self.rig = Rig()
+        self.rig.app.poller.spy = test_spylist.stand_in(["100.90.146.87"], ["100.117.214.0/24"])
+
+    def tearDown(self):
+        self.rig.close()
+
+    def test_flagged_with_a_lamp_an_alert_and_events(self):
+        rig = self.rig
+        snap = rig.poll(0)
+        flagged = sorted((p["dir"], p["ip"]) for p in snap["peers"]["list"] if p["spy"])
+        self.assertEqual(flagged, [("in", "100.117.214.58"), ("out", "100.90.146.87")])
+        sp = snap["peers"]["spy"]
+        self.assertEqual((sp["entries"], sp["ranges"], sp["node_bans"], sp["out"], sp["in"]), (2, 1, 0, 1, 1))
+        lamp = lamps_by_id(snap)["spy"]
+        self.assertEqual((lamp["state"], lamp["value"]), ("warn", "2 CONNECTED"))
+        a = alerts_by_id(snap)["spy"]
+        self.assertEqual(a["text"], "2 peers on the MRL spy node list are connected (1 out · 1 in). " + SPY_FIX)
+        # both were connected a while before the first reading, so the events say for how long
+        age = {p["ip"]: p["age_s"] for p in snap["peers"]["list"] if p["spy"]}
+        said = [e["text"] for e in snap["events"] if e["kind"] == "spy"]
+        self.assertEqual(sorted(said), [
+            "A peer on the MRL spy node list is connected: 100.117.214.58 (incoming, for %s). Your node doesn't ban it"
+            % duration_text(age["100.117.214.58"]),
+            "A peer on the MRL spy node list is connected: 100.90.146.87 (outgoing, for %s). Your node doesn't ban it"
+            % duration_text(age["100.90.146.87"])])
+        # still connected, past the hour that holds a repeat back: no new event
+        for _ in range(3):
+            snap = rig.poll(SPY_EVENT_EVERY_S // 2)
+        self.assertEqual(len([e for e in snap["events"] if e["kind"] == "spy"]), 2)
+
+    def test_a_peer_that_connects_while_watched_says_connected(self):
+        rig = self.rig
+        conns = rig.fake.results["get_connections"]["connections"]
+        peer = next(c for c in conns if c["host"] == "100.90.146.87")
+        conns.remove(peer)
+        rig.poll(0)
+        conns.append(dict(peer, live_time=4))
+        snap = rig.poll(5)
+        said = [e["text"] for e in snap["events"] if "100.90.146.87" in e["text"]]
+        self.assertEqual(said, ["A peer on the MRL spy node list connected: 100.90.146.87 (outgoing). "
+                                "Your node doesn't ban it"])
+
+    def test_after_the_peer_list_could_not_be_read_a_listed_peer_is_said_again(self):
+        # the node stopped answering get_connections for over an hour; the peer still there
+        # afterwards is a new sighting as far as Memstara can tell
+        rig = self.rig
+        rig.poll(0)
+        rig.fake.fail.add("get_connections")
+        rig.poll(60)
+        rig.poll(SPY_EVENT_EVERY_S)
+        rig.fake.fail.discard("get_connections")
+        snap = rig.poll(5)
+        self.assertEqual(len([e for e in snap["events"] if "100.90.146.87" in e["text"]]), 2)
+        # and only then: a short gap says nothing new
+        rig.fake.fail.add("get_connections")
+        rig.poll(60)
+        rig.fake.fail.discard("get_connections")
+        snap = rig.poll(5)
+        self.assertEqual(len([e for e in snap["events"] if "100.90.146.87" in e["text"]]), 2)
+
+    def test_one_event_an_hour_for_a_peer_that_keeps_coming_back(self):
+        rig = self.rig
+        conns = rig.fake.results["get_connections"]["connections"]
+        peer = next(c for c in conns if c["host"] == "100.90.146.87")
+        rig.poll(0)
+        for _ in range(3):
+            conns.remove(peer)
+            rig.poll(60)
+            conns.append(peer)
+            snap = rig.poll(60)
+        self.assertEqual(len([e for e in snap["events"] if "100.90.146.87" in e["text"]]), 1)
+        conns.remove(peer)
+        rig.poll(3600)
+        conns.append(peer)
+        snap = rig.poll(5)
+        self.assertEqual(len([e for e in snap["events"] if "100.90.146.87" in e["text"]]), 2)
+
+    def test_what_the_node_bans(self):
+        rig = self.rig
+        bans = rig.fake.results["get_bans"]["bans"]
+        bans.append({"host": "100.90.146.87", "ip": 0, "seconds": 2503736695})
+        sp = rig.poll(0)["peers"]["spy"]
+        self.assertEqual(sp["node_bans"], 1)
+        # monerod drops a banned peer's connection; with the whole list banned, none is left
+        bans.append({"host": "100.117.214.0/24", "ip": 0, "seconds": 2503736695})
+        conns = rig.fake.results["get_connections"]["connections"]
+        conns[:] = [c for c in conns if c["host"] not in ("100.90.146.87", "100.117.214.58")]
+        snap = rig.poll(60)
+        self.assertEqual((snap["peers"]["spy"]["node_bans"], snap["peers"]["spy"]["out"]), (2, 0))
+        self.assertTrue(lamps_by_id(snap)["spy"]["value"].startswith("SEEN "), "up 10 min after the last one left")
+        snap = rig.poll(10 * 60)
+        self.assertNotIn("spy", alerts_by_id(snap))
+        self.assertEqual((lamps_by_id(snap)["spy"]["state"], lamps_by_id(snap)["spy"]["value"]), ("ok", "NODE BANS ALL"))
+
+    def test_a_changed_list_flags_nothing(self):
+        rig = self.rig
+        tmp = Path(rig.tmp.name) / "ban_list.txt"
+        tmp.write_text("100.90.146.87\n")
+        rig.app.poller.spy = SpyList(tmp)
+        snap = rig.poll(0)
+        self.assertFalse(any(p["spy"] for p in snap["peers"]["list"]))
+        self.assertEqual(snap["peers"]["spy"]["state"], "changed")
+        self.assertNotIn("spy", alerts_by_id(snap))
+        self.assertEqual((lamps_by_id(snap)["spy"]["state"], lamps_by_id(snap)["spy"]["value"]), ("off", "LIST CHANGED"))
 
 
 class FloodTest(unittest.TestCase):

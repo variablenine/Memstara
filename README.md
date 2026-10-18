@@ -13,7 +13,8 @@ read-only console commands ask (each one is a front end for an RPC request,
 see `src/daemon/rpc_command_executor.cpp` in Monero's source), and every
 method it can send is on one short list in `memstara/rpc.py`. Monero updates
 don't need dashboard updates. Besides RPC it reads `monerod`'s own log file,
-read-only, for things RPC doesn't report, and its own settings and history.
+read-only, for things RPC doesn't report, its own settings and history, and
+the spy node list it comes with.
 [SAFETY.md](SAFETY.md#what-it-reads-on-this-computer) lists the few other
 look-ups, such as this computer's name, which it reads only so privacy mode
 can hide it.
@@ -53,7 +54,7 @@ problem pulses in the problem colour and its tab shows ■ (▲ for a heads-up).
 | B · Chain | Height, how long since the last block (and how unusual that wait is), the last 60 blocks drawn as a timeline, average gap, blocks replaced, network hashrate. |
 | C · Peer scope | Every connection as a dot. Peers from the same company's servers stack at the same angle, so a spy cluster shows up as a pile-up. Distance from the middle is how long it's been connected. |
 | D · Route | How the node is connected: other nodes, your node, Tor sending and the dashboard (with how fast the node answers). |
-| E · Ban list | What your node is banning now, and the ranges at the eclipse limits. Read-only: banning is left to `monerod`'s own console. |
+| E · Ban list | What your node is banning now, the ranges at the eclipse limits, and how much of the MRL spy node list your node bans. Read-only: banning is left to `monerod`'s own console. |
 | F · Traffic | Download and upload now, and the last 15 minutes. |
 | G · History | Connections, mempool and traffic over 15 min, 1 h, 6 h or 24 h, kept for 24 h. |
 | H · Mempool | Transactions waiting, how long they've waited, double spends. |
@@ -88,6 +89,23 @@ ordinary use, so a lit lamp means "wait if privacy matters", not "you are
 being watched". It reads about 263,000 blocks once when it starts (showing how
 far along it is), then only the newest. Details:
 [docs/DESIGN.md](docs/DESIGN.md), "Black marble watch".
+
+**Spy node list.** Memstara comes with the Monero Research Lab's spy node
+list: 431 addresses and ranges of nodes found behaving in ways normal Monero
+nodes don't, from [github.com/Boog900/monero-ban-list](https://github.com/Boog900/monero-ban-list).
+It's kept unchanged in its own folder, `third_party/mrl-ban-list/`, so you can
+compare it with the original and check its five signatures
+([third_party/README.md](third_party/README.md) says how), and Memstara won't
+use it if a single byte differs. A connected peer on the list gets a ▲ on the
+NETWORK screen and in the peer scope, the SPY NODE LIST lamp lights as a
+heads-up, and the log says when it connected. The BAN LIST panel shows how
+much of the list your node already bans. Memstara doesn't ban anything: a node
+started with `--enable-dns-blocklist` bans the whole list (it's the same list
+`monerod` reads over DNS; mainnet only, and with `--proxy` only alongside
+`--proxy-allow-dns-leaks`), or start it with `--ban-list` and the file. With
+the list banned, none of its peers can connect, and the lamp reads NODE BANS
+ALL. A restricted RPC port shows neither connections nor bans, so the lamp
+stays off there.
 
 Every chart has a table view or a hover readout with the exact numbers.
 
@@ -264,8 +282,9 @@ takes at most 1,000 blocks at a time (the console has no limit).
 Some things about the node aren't in any RPC answer, so the dashboard also
 reads `monerod`'s own log file, read-only (Settings → Node's log says where it
 is): reorgs, blocks that lost a race, bans as they happen, errors and
-warnings. That's all it reads besides RPC and its own files: nothing else
-about the computer.
+warnings. That's all it reads besides RPC, its own files and the spy node list
+it comes with (`third_party/mrl-ban-list/ban_list.txt`, once at start):
+nothing else about the computer.
 (Privacy mode looks up this computer's name, your user name, your real name
 and your home folder, only to hide them. When the window's packages are
 missing, it reads `/etc/os-release`, only to print the right install command.)

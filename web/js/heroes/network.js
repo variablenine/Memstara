@@ -226,7 +226,7 @@ export default function create(body, env) {
     const p = parent ? parent.pos : [0, 3, 0];
     const n = {
       id, type, parent, kind: parent?.kind || null, pos: [...p], target: [...p], alpha: 0, born: clockT, gone: false,
-      peer: null, label: "", sub: "", act: 0, rateIn: 0, rateOut: 0, spawnIn: 0, spawnOut: 0, n: 0, warn: null,
+      peer: null, label: "", sub: "", act: 0, rateIn: 0, rateOut: 0, spawnIn: 0, spawnOut: 0, n: 0, warn: null, spy: 0,
       head: () => headOf(n), rows: () => rowsOf(n),
     };
     nodes.set(id, n);
@@ -260,6 +260,7 @@ export default function create(body, env) {
         { label: "CONNECTIONS", value: f.num(n.n) },
         { label: "DOWN / UP NOW", value: `${f.rate(n.rateIn)} / ${f.rate(n.rateOut)}` },
         n.warn ? warnNote(n.warn) : null,
+        n.spy ? spyNote(n.spy, true) : null,
         n.type === "group" ? { note: `${f.plural(n.n, "connection")} on one company's servers. The ECLIPSE WATCH lamps warn when too many of your connections share one company.` } : null,
       ].filter(Boolean);
     }
@@ -275,9 +276,18 @@ export default function create(body, env) {
     ];
     if (p.kind === "ipv4" && p.net16) rows.push({ label: "COMPANY RANGE", value: `${p.net16}.x.x` });
     if (p.pruned) rows.push({ label: "KEEPS", value: "PART OF THE CHAIN (PRUNED)" });
+    if (p.kind === "ipv4") rows.push({ label: "MRL SPY NODE LIST", value: p.spy === true ? "▲ ON IT" : p.spy === false ? "NOT ON IT" : "LIST NOT USED" });
     if (n.warn) rows.push(warnNote(n.warn));
+    if (n.spy) rows.push(spyNote(1, false));
     return rows;
   }
+  // a peer, or k peers in a group, on the MRL spy node list the dashboard bundles
+  const spyNote = (k, group) => {
+    const one = k === 1;
+    const who = group ? `${k} ${one ? "PEER HERE IS" : "PEERS HERE ARE"} ON` : "ON";
+    const what = group ? (one ? "it" : "them") : "this address";
+    return { note: f.flag("warn", `HEADS-UP · ${who} THE MRL SPY NODE LIST: the Monero Research Lab found ${what} acting like a spy node, and your node doesn't ban ${one ? "it" : "them"} (BANS screen).`), level: "warn" };
+  };
   // an active ECLIPSE WATCH alert, said on the card of each peer (and group) it names
   const warnNote = (a) => ({ note: f.flag("warn", `HEADS-UP · ${a.title || "ECLIPSE WATCH"}: ${a.text || ""}`), level: "warn" });
 
@@ -344,7 +354,7 @@ export default function create(body, env) {
         if (k.g) {
           const gid = `g:${kind}:${k.g}`;
           const g = nodes.get(gid) || makeNode(gid, "group", b);
-          g.parent = b; g.kind = kind; g.gone = false; g.label = `${k.g}.x.x`; g.n = k.ps.length; g.warn = null;
+          g.parent = b; g.kind = kind; g.gone = false; g.label = `${k.g}.x.x`; g.n = k.ps.length; g.warn = null; g.spy = 0;
           seen.add(gid);
           g.target = pos;
           const sub = place(k.ps.length, a + i * 0.7, 0.42, 14);
@@ -352,6 +362,7 @@ export default function create(body, env) {
             const [ex, ez, ey] = sub[j];
             const lf = leaf(p, g, [pos[0] + ex, pos[1] - 1.35 + ey, pos[2] + ez], seen);
             if (lf.warn) g.warn = lf.warn;   // the group holds a peer an ECLIPSE WATCH heads-up names
+            if (lf.spy) g.spy++;             // and how many on the spy node list
           });
         } else leaf(k.p, b, pos, seen);
       });
@@ -399,6 +410,7 @@ export default function create(body, env) {
     const n = nodes.get(id) || makeNode(id, "leaf", parent);
     n.parent = parent; n.kind = branchOf(p); n.peer = p; n.gone = false; n.target = pos;
     n.warn = p.kind === "ipv4" || p.kind === "ipv6" ? warned[p.dir === "in" ? "in" : "out"].get(String(p.ip)) || null : null;
+    n.spy = p.spy ? 1 : 0;
     seen.add(id);
     return n;
   }
@@ -813,8 +825,8 @@ export default function create(body, env) {
       taken.push([n.sx - r, n.sy - r, n.sx + r, n.sy + r, n]);   // its own label may touch it
     }
     const labelled = drawn.filter((n) => n.alpha >= 0.3 && (n.type === "root" || n.type === "branch"
-      || n === selected || n === hovered || (n.type === "group" && (n.warn || n.proj.s >= 80))));
-    const rank = (n) => (n.type === "root" ? 0 : n === selected ? 1 : n === hovered ? 2 : n.type === "branch" ? 3 : n.warn ? 4 : 5);
+      || n === selected || n === hovered || n.spy || (n.type === "group" && (n.warn || n.proj.s >= 80))));
+    const rank = (n) => (n.type === "root" ? 0 : n === selected ? 1 : n === hovered ? 2 : n.type === "branch" ? 3 : n.warn || n.spy ? 4 : 5);
     labelled.sort((x, y) => rank(x) - rank(y) || x.proj.d - y.proj.d);
     for (const n of labelled) label(ctx, n, w, h, rank(n) <= 3);
     // name tags never pile on each other: the busiest go first, the rest only where there's room
@@ -883,7 +895,7 @@ export default function create(body, env) {
       ctx.globalCompositeOperation = "source-over";
       ring(ctx, p.x, p.y, 5 * s, `rgba(${rgb}, ${0.95 * a})`, on ? 2 : 1.3);
       // a heads-up names peers in this group: a steady ring in the heads-up colour (the label carries ▲ and the word)
-      if (n.warn) ring(ctx, p.x, p.y, 5 * s + 3.5, `rgba(${warnRGB}, ${0.95 * a})`, 1.6);
+      if (n.warn || n.spy) ring(ctx, p.x, p.y, 5 * s + 3.5, `rgba(${warnRGB}, ${0.95 * a})`, 1.6);
       if (focus) ring(ctx, p.x, p.y, 5 * s + 7, `rgba(255, 255, 255, ${0.85 * a})`, 1.2);
       return;
     }
@@ -911,7 +923,7 @@ export default function create(body, env) {
       ring(ctx, p.x, p.y, r + 1.6, `rgba(${rgb}, ${strength * 0.85 * a})`, 1);   // outgoing: a thin ring round a bright centre
       dot(ctx, p.x, p.y, Math.max(1.1, r * 0.55), `rgba(${rgb}, ${Math.min(1, strength + 0.25) * a})`);
     }
-    if (n.warn) ring(ctx, p.x, p.y, r + 3.4, `rgba(${warnRGB}, ${0.9 * a})`, 1.3);   // named by a heads-up: steady, in the heads-up colour
+    if (n.warn || n.spy) ring(ctx, p.x, p.y, r + 3.4, `rgba(${warnRGB}, ${0.9 * a})`, 1.3);   // named by a heads-up or on the spy list: steady, in the heads-up colour
     if (focus) ring(ctx, p.x, p.y, r + 6, `rgba(255, 255, 255, ${0.85 * a})`, 1.2);
   }
 
@@ -934,12 +946,12 @@ export default function create(body, env) {
       sub = n.kind === "out" && f.isNum(s.node?.out_wanted) ? `${f.num(n.n)} / ${f.num(s.node.out_wanted)}` : f.num(n.n);
     } else if (n.type === "group") {
       main = n.label;
-      sub = n.warn ? f.flag("warn", `HEADS-UP · ${n.n} · ONE COMPANY`) : `${n.n} · ONE COMPANY`;
-      if (n.warn) subRGB = warnRGB;
+      sub = n.warn ? f.flag("warn", `HEADS-UP · ${n.n} · ONE COMPANY`) : n.spy ? f.flag("warn", `${n.n} PEERS · ${n.spy} ON THE SPY LIST`) : `${n.n} · ONE COMPANY`;
+      if (n.warn || n.spy) subRGB = warnRGB;
     } else {
       main = shortHost(n.peer);
-      sub = n.warn ? f.flag("warn", "HEADS-UP · ONE COMPANY") : `↓ ${f.rate(n.rateIn)} ↑ ${f.rate(n.rateOut)}`;
-      if (n.warn) subRGB = warnRGB;
+      sub = n.spy ? f.flag("warn", "SPY NODE LIST") : n.warn ? f.flag("warn", "HEADS-UP · ONE COMPANY") : `↓ ${f.rate(n.rateIn)} ↑ ${f.rate(n.rateOut)}`;
+      if (n.warn || n.spy) subRGB = warnRGB;
     }
     const [fs, gap] = n.type === "root" ? LABEL_FONT.root : LABEL_FONT.other;
     const [sfs, sgap] = LABEL_FONT.sub;

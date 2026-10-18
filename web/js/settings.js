@@ -363,7 +363,7 @@ function about() {
   h("WHAT THIS IS");
   p("A console for one Monero node. It runs on the same computer as the node, or on another one reaching it over the network, and talks to monerod only through its normal RPC port, so Monero itself is never changed and updates to Monero don't need updates here.");
   h("WHAT IT READS");
-  p("What monerod's RPC port answers, monerod's own log file (Settings → Node's log) and its own settings and history. It also looks up this computer's name, your user name, your real name and your home folder, only so privacy mode can hide them. The full list, each point with a command to check it, is in ", el("code", { text: "SAFETY.md" }), ".");
+  p("What monerod's RPC port answers, monerod's own log file (Settings → Node's log), its own settings and history, and the MRL spy node list it comes with (third_party/mrl-ban-list, unchanged). It also looks up this computer's name, your user name, your real name and your home folder, only so privacy mode can hide them. The full list, each point with a command to check it, is in ", el("code", { text: "SAFETY.md" }), ".");
   h("WHAT IT CAN CHANGE");
   p("Nothing on the node: every RPC method it can send is a read, listed in ", el("code", { text: "memstara/rpc.py" }), ". It never writes to monerod's files or anyone else's, and it loads nothing from the internet: fonts and code are all local.");
   h("SAFETY");

@@ -179,16 +179,18 @@ export function renderPeers(snap) {
     const anon = p.kind === "tor" || p.kind === "i2p";
     const shape = anon ? `tor-${p.dir}` : p.dir;
     let b = blips.get(key);
-    if (b && b.shape !== shape) { b.g.remove(); b = null; }
+    if (b && (b.shape !== shape || b.spy !== !!p.spy)) { b.g.remove(); b = null; }
     if (!b) {
       // a connection that came while the scope was showing flashes in
-      b = { shape, p };
-      b.g = svg("g", { class: "blip" + (drawnOnce ? " is-new" : "") });
+      b = { shape, p, spy: !!p.spy };
+      b.g = svg("g", { class: "blip" + (drawnOnce ? " is-new" : "") + (p.spy ? " is-spy" : "") });
       b.mark = anon ? svg("path", { class: "blip-tor" + (p.dir === "in" ? " in" : "") })
         : svg("circle", { class: p.dir === "out" ? "blip-out" : "blip-in", r: p.dir === "out" ? 3.2 : 2.8 });
+      // a peer on the MRL spy node list: a heads-up triangle over its dot, not colour alone
+      b.flag = p.spy ? svg("path", { class: "blip-spy" }) : null;
       b.hit = svg("circle", { class: "blip-hit", r: 7, tabindex: -1, role: "img", "data-key": key });
       attachTip(b.hit, () => peerTip(b.p));
-      b.g.append(b.mark, b.hit);
+      b.g.append(b.mark, ...(b.flag ? [b.flag] : []), b.hit);
       frame.blips.append(b.g);
       blips.set(key, b);
     }
@@ -201,10 +203,11 @@ export function renderPeers(snap) {
       setAttr(b.mark, "cx", x);
       setAttr(b.mark, "cy", y);
     }
+    if (b.flag) setAttr(b.flag, "d", `M${x},${(y - 10.5).toFixed(2)}L${(x + 3.6).toFixed(2)},${(y - 4.6).toFixed(2)}L${(x - 3.6).toFixed(2)},${(y - 4.6).toFixed(2)}Z`);
     setAttr(b.hit, "cx", x);
     setAttr(b.hit, "cy", y);
     const where = anon ? `${String(p.kind).toUpperCase()} ${shortOnion(p.host)}` : `${p.ip}${p.port ? ":" + p.port : ""}`;
-    setAttr(b.hit, "aria-label", `${p.dir === "out" ? "OUTGOING" : "INCOMING"} · ${where} · CONNECTED FOR ${f.dur(p.age_s)}`);
+    setAttr(b.hit, "aria-label", `${p.dir === "out" ? "OUTGOING" : "INCOMING"} · ${where} · CONNECTED FOR ${f.dur(p.age_s)}${p.spy ? " · ON THE MRL SPY NODE LIST" : ""}`);
     hits.push(b.hit);
   }
   for (const [key, b] of blips) if (!keys.has(key)) { b.g.remove(); blips.delete(key); }
@@ -253,6 +256,12 @@ export function renderPeers(snap) {
   setText(sp, atLimit ? f.flag("warn", "AT THE LIMIT · " + spText) : spText);
   setData(sp, "level", atLimit ? "warn" : null);
 
+  // peers on the MRL spy node list (the BAN LIST panel says how much of it your node bans)
+  const spyN = drawn.filter((p) => p.spy).length;
+  const spyEl = $("peers-spy");
+  spyEl.hidden = !spyN;
+  setText(spyEl, spyN ? f.flag("warn", `${f.plural(spyN, "PEER", "PEERS")} ON THE MRL SPY NODE LIST · YOUR NODE DOESN'T BAN ${spyN === 1 ? "IT" : "THEM"} (BAN LIST, E)`) : "");
+
   fillTable(drawn);
 }
 
@@ -267,6 +276,7 @@ function peerTip(p) {
       { label: "STATE", value: String(p.state || "—").toUpperCase() },
       { label: "DOWN / UP", value: `${f.rate(p.down_bps)} / ${f.rate(p.up_bps)}` },
       { label: "PRUNED NODE", value: p.pruned ? "YES" : "NO" },
+      ...(p.kind === "ipv4" ? [{ label: "MRL SPY NODE LIST", value: p.spy === true ? "▲ ON IT" : p.spy === false ? "NOT ON IT" : "LIST NOT USED" }] : []),
     ],
   };
 }
@@ -296,9 +306,10 @@ function fillTable(list) {
       rowsShown.set(key, tr);
     }
     const anon = p.kind === "tor" || p.kind === "i2p";
+    setData(tr, "level", p.spy ? "warn" : null);
     const cells = [
       p.dir === "out" ? "▸ OUT" : "◂ IN",
-      anon ? shortOnion(p.host) : `${p.ip}${p.port ? ":" + p.port : ""}`,
+      anon ? shortOnion(p.host) : `${p.spy ? "▲ " : ""}${p.ip}${p.port ? ":" + p.port : ""}${p.spy ? " · SPY LIST" : ""}`,
       f.dur(p.age_s), f.num(p.height), String(p.state || "—").toUpperCase(),
       f.rate(p.down_bps), f.rate(p.up_bps),
     ];

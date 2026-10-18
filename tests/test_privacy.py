@@ -204,6 +204,25 @@ class AnswerTest(unittest.TestCase):
         self.assertEqual(p["net24"] + ".0/24", out["node"]["ban_list"][0]["host"].replace(t("n24", "62.233.57"), p["net24"]))
         self.assertIs(self.r.snapshot_json(snap), self.r.snapshot_json(snap), "made once per snapshot")
 
+    def test_the_spy_node_list(self):
+        # a peer on it keeps its flag and the list its numbers; its address is hidden wherever it's written
+        t = self.t
+        spy = {"state": "ok", "version": "2", "date": "2025-12-10", "entries": 431, "ranges": 14,
+               "node_bans": 0, "out": 1, "in": 0}
+        snap = {"peers": {"list": [{"ip": "100.90.146.87", "host": "100.90.146.87", "spy": True}], "spy": spy},
+                "alerts": [{"id": "spy", "text": "1 peer on the MRL spy node list is connected (1 out)",
+                            "ips": ["100.90.146.87"]}],
+                "events": [{"kind": "spy", "text": "A peer on the MRL spy node list connected: 100.90.146.87 "
+                                                   "(outgoing). Your node doesn't ban it"}]}
+        out = json.loads(self.r.snapshot_json(snap))
+        self.assertEqual(out["peers"]["list"][0], {"ip": t("ip", "100.90.146.87"), "host": t("ip", "100.90.146.87"),
+                                                   "spy": True})
+        self.assertEqual(out["peers"]["spy"], spy)
+        self.assertEqual(out["alerts"][0]["ips"], [t("ip", "100.90.146.87")])
+        self.assertEqual(out["events"][0]["text"], "A peer on the MRL spy node list connected: %s (outgoing). Your "
+                                                   "node doesn't ban it" % t("ip", "100.90.146.87"))
+        self.assertNotIn("100.90.146.87", self.r.snapshot_json(snap).decode())
+
     def test_mempool(self):
         t = self.t
         snap = {"mempool": {"txs": 3, "not_relayed": 1, "list": [["aaaa1111bbbb2222", 100, 5, 9, 0],

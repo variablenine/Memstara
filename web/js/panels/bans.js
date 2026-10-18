@@ -1,8 +1,8 @@
 // E · Ban list: what your node is banning right now (monerod's get_bans, the
-// console's `bans`), and the ranges at the one-company limits (too many
-// connections from one company's servers). Read-only: Memstara can't ban or
-// unban. monerod's own console can (`ban` and `unban`).
-import { $, el, setText } from "../dom.js";
+// console's `bans`), the ranges at the one-company limits (too many
+// connections from one company's servers) and the MRL spy node list. Read-only:
+// Memstara can't ban or unban. monerod's own console can (`ban` and `unban`).
+import { $, el, setText, setData } from "../dom.js";
 import * as f from "../fmt.js";
 import { hiddenRange } from "../privacy.js";
 
@@ -112,6 +112,34 @@ export function renderBans(snap) {
   (it) => (it.key === "empty" ? emptyRow() : banRow()));
   setText($("ban-long"), f.isNum(node.bans_long) && node.bans_long > 0
     ? `Not listed: ${f.plural(node.bans_long, "ban")} with more than 24 hours left (a --ban-list file, the DNS blocklist or bans set by hand).` : "");
+
+  renderSpy(snap);
+}
+
+// The MRL spy node list (memstara/spylist.py): the bundled list, how much of it the node
+// bans (get_bans), and how many of its peers are on it now (get_connections)
+function renderSpy(snap) {
+  const sp = snap.peers?.spy;
+  const live = snap.source?.answering !== false && !snap.source?.restricted;
+  const put = (id, text, level = null) => { const d = $(id); setText(d, text); setData(d, "level", level); };
+  if (!sp) {
+    put("ban-spy-list", "—"); put("ban-spy-bans", "—"); put("ban-spy-now", "—");
+    return;
+  }
+  if (sp.state !== "ok") {
+    put("ban-spy-list", f.flag("warn", sp.state === "changed" ? "CHANGED · NOT USED" : "MISSING · NOT USED"), "warn");
+    put("ban-spy-bans", "—", "off"); put("ban-spy-now", "—", "off");
+    return;
+  }
+  put("ban-spy-list", `VERSION ${sp.version} · ${sp.date} · ${f.plural(sp.entries, "ENTRY", "ENTRIES")} (${f.plural(sp.ranges, "RANGE", "RANGES")})`);
+  const why = snap.source?.restricted ? "NOT ON A RESTRICTED PORT" : "—";
+  if (f.isNum(sp.node_bans)) put("ban-spy-bans", `${f.num(sp.node_bans)} OF ${f.num(sp.entries)}${sp.node_bans >= sp.entries ? " · ALL OF IT" : ""}`);
+  else put("ban-spy-bans", why, snap.source?.restricted ? "off" : null);
+  if (live && f.isNum(sp.out) && f.isNum(sp.in)) {
+    const n = sp.out + sp.in;
+    const bits = [sp.out ? `${sp.out} OUT` : "", sp.in ? `${sp.in} IN` : ""].filter(Boolean).join(" · ");
+    put("ban-spy-now", n ? f.flag("warn", `${f.plural(n, "PEER", "PEERS")} (${bits})`) : "NONE", n ? "warn" : null);
+  } else put("ban-spy-now", why, snap.source?.restricted ? "off" : null);
 }
 
 export function initBans({ openCommands } = {}) {

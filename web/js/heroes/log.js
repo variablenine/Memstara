@@ -27,13 +27,13 @@ const LANES = [
 ];
 // event kind -> lane (anything new lands in NODE)
 const LANE_OF = {
-  block: 0, peer_in: 1, peer_out: 1, peer_gone: 1,
+  block: 0, peer_in: 1, peer_out: 1, peer_gone: 1, spy: 1,
   sync: 2, restart: 2, source: 2, settings: 2,
   alert: 3, clear: 3, log: 4, reorg: 5,
 };
 // the short tag on the terminal line
 const TAG = {
-  block: "BLOCK", peer_in: "PEERS", peer_out: "PEERS", peer_gone: "PEERS", sync: "SYNC", restart: "RESTART",
+  block: "BLOCK", peer_in: "PEERS", peer_out: "PEERS", peer_gone: "PEERS", spy: "SPY LIST", sync: "SYNC", restart: "RESTART",
   source: "SOURCE", settings: "SETTINGS", alert: "ALERT", clear: "CLEARED", log: "MONEROD", reorg: "REORG",
 };
 const LEVEL_WORD = { warn: "▲ HEADS-UP", bad: "■ PROBLEM" };

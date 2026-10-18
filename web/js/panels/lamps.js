@@ -28,6 +28,7 @@ export function describe(id) {
     case "spread_out": return `${g("thresholds.out16_warn", 5)} or more outgoing connections on one company's servers for ${g("grace.spread_min", 10)} min (a possible spy cluster).`;
     case "spread_in": return `${g("thresholds.in24_warn", 4)} or more incoming connections from one company's servers for ${g("grace.spread_min", 10)} min.`;
     case "tor": return `Tor sending is on but your node has had no Tor connections for ${g("grace.tor_min", 10)} min. Transactions you send wait until one connects.`;
+    case "spy": return "Peers on the MRL spy node list (the Monero Research Lab's list of nodes acting like spy nodes, which comes with Memstara unchanged). Heads-up while one is connected and for 10 min after. A node started with --enable-dns-blocklist (mainnet only, and with --proxy only alongside --proxy-allow-dns-leaks) or with --ban-list and Memstara's copy bans the whole list, and then reads NODE BANS ALL.";
     case "flood": return `Black marble watch: what a new transaction's 16-member ring works like if one sender made the recent surge of new outputs (CHAIN screen, L). Heads-up under ${g("thresholds.flood_warn", 11)}, problem under ${g("thresholds.flood_bad", 8)}, for ${g("grace.flood_min", 30)} min. It can't tell a flood from a busy spell of ordinary use.`;
     default: return "";
   }

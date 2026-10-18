@@ -333,14 +333,22 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
        "sent_bytes": 98000000,         // send_count
        "recv_idle_s": 4,               // recv_idle_time: seconds since the peer last sent anything
        "send_idle_s": 14,              // send_idle_time
-       "pruned": false}                // pruning_seed != 0
+       "pruned": false,                // pruning_seed != 0
+       "spy": false}                   // its address is on the MRL spy node list (see **Spy node list**)
     ],
     "spread": {                        // biggest cluster each way (see the spread_out / spread_in alerts)
       "out16": {"net": "100.66", "n": 2, "ips": ["100.66.1.9", "100.66.4.2"]},
       "in24":  {"net": "100.70.3", "n": 1, "ips": ["100.70.3.4"]}
     },
     "out_by_kind": {"ipv4": 20, "ipv6": 2, "tor": 3, "i2p": 0},
-    "in_by_kind":  {"ipv4": 31, "ipv6": 0, "tor": 0, "i2p": 0}
+    "in_by_kind":  {"ipv4": 31, "ipv6": 0, "tor": 0, "i2p": 0},
+    "spy": {                           // the MRL spy node list (memstara/spylist.py)
+      "state": "ok",                   // "ok" | "changed" (not the pinned file: not used) | "missing"
+      "version": "2", "date": "2025-12-10",
+      "entries": 431, "ranges": 14,    // 0 when not "ok"
+      "node_bans": 431,                // how many of its entries get_bans shows; null on a restricted port
+      "out": 0, "in": 0                // connected peers on it; null when the connections weren't read
+    }
   },
   "mempool": {
     "txs": 34, "bytes": 120000, "fee_total": 1200000000,
@@ -359,7 +367,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
      "text": "Only 6 of 32 outgoing connections for 12 min",
      "since": 1759699000, "source": "dashboard", "ips": null}
   ],
-  "lamps": [                           // the annunciator wall: the 12 lamps in this order
+  "lamps": [                           // the annunciator wall: the 13 lamps in this order
     {"id": "node", "label": "NODE", "state": "ok", "value": "ANSWERING", "since": null}
   ],                                   // since = when it last left ok/off, null while ok/off
   "events": [                          // newest first, at most 200
@@ -376,7 +384,7 @@ second. A value the dashboard doesn't know is `null`, never a made-up number.
 ### Lamps (annunciator wall)
 
 `state` is one of `ok`, `warn`, `bad`, `off` (not set up / not known). Always
-these 12, in this order. `value` is a
+these 13, in this order. `value` is a
 short plain-language reading (at most about 14 characters, uppercase).
 
 | id | label | lit when | source |
@@ -393,6 +401,7 @@ short plain-language reading (at most about 14 characters, uppercase).
 | `spread_in` | ECLIPSE · IN | 4+ incoming from one network for 10 min | RPC |
 | `tor` | TOR SENDING | Tor sending on but 0 Tor peers for 10 min | RPC |
 | `flood` | BLACK MARBLE | a new 16-member ring works like under 11 / 8 members for 30 min | RPC |
+| `spy` | SPY NODE LIST | a connected peer is on the MRL spy node list, and 10 min after | RPC and the bundled list |
 
 ### Alerts
 
@@ -415,14 +424,16 @@ Rules (thresholds are settings):
 | `spread_in` | warn | ≥ `in24_warn` 4 incoming IPv4 peers in one x.y.z network | `grace.spread_min` 10 min | |
 | `flood` | warn / bad | the black marble watch's estimate: a new transaction's 16-member ring works like fewer than `flood_warn` 11 / `flood_bad` 8 members (see **Black marble watch**) | `grace.flood_min` 30 min | |
 | `tor` | warn | `tor_sending` setting is `on` (or `auto` and Tor peers were seen in `get_connections` since the node last started) and 0 outgoing Tor peers | `grace.tor_min` 10 min | |
+| `spy` | warn | a connected peer's address is on the MRL spy node list (`peers.list[].spy`) | | 10 min |
 
 While the node isn't answering, only `node_down` is raised (the other rules
 pause rather than firing on missing data).
 `flood` also pauses while the watch has no estimate (the node syncing, using a
 bootstrap node, or the year still being read), and keeps how long it has been
 under its limits: the estimate moves slowly, so one that comes back still under
-them carries on where it was, without a second "raised" event. Alert
-texts are plain language.
+them carries on where it was, without a second "raised" event. `spy` pauses
+while the connections can't be read (a restricted port) or the list isn't
+usable. Alert texts are plain language.
 Raising or clearing an alert adds an event.
 
 Reorg detection: the poller keeps `height -> hash` for the last 100 blocks. When
@@ -433,13 +444,49 @@ heights found in one poll.
 ### Events
 
 `{"t", "level": "info"|"warn"|"bad"|"ok", "kind", "text"}`. Kinds: `block`,
-`reorg`, `peer_in`, `peer_out`, `peer_gone`, `alert`, `clear`, `restart`,
+`reorg`, `peer_in`, `peer_out`, `peer_gone`, `spy`, `alert`, `clear`, `restart`,
 `source`, `settings`, `sync` and
 `log` (lines from monerod's log, see **monerod's log as events**). Peer join/leave events
 are summarised ("3 joined · 1 left") instead of one line each: the first change
 after a quiet spell at once, then at most one event per 5 seconds, and a peer
-that leaves and comes back in between isn't counted. Kept
-in memory (last 200).
+that leaves and comes back in between isn't counted. A `spy` event says a
+peer on the spy node list connected, with its address and direction, at most
+once an hour for each address. Kept in memory (last 200).
+
+## Spy node list (`memstara/spylist.py`, `third_party/mrl-ban-list/`)
+
+Memstara comes with the Monero Research Lab's spy node list, from
+github.com/Boog900/monero-ban-list at commit `22ddf399`: `ban_list.txt` and
+its five signatures, copied byte for byte into their own folder.
+`third_party/README.md` gives the hashes and the commands to compare them with
+the original and check the signatures. On 2026-10-18 the DNS blocklist
+`monerod --enable-dns-blocklist` reads (`blocklist.moneropulse.*`) held the
+same 431 entries.
+
+- `SpyList` reads `ban_list.txt` once at start, read-only, and uses it only
+  when its sha256 is `SHA256` in `spylist.py`. Otherwise `state` is `changed`
+  (or `missing`), nothing is flagged and the lamp reads LIST CHANGED (or LIST
+  MISSING).
+- Lines are read as `monerod` reads a `--ban-list` file
+  (`src/p2p/net_node.inl`, `handle_command_line`): text after `#` is a
+  comment, blank lines are skipped, an entry with `/` is an IPv4 range.
+- Each IPv4 peer in `get_connections` gets `spy`: its address is an entry or
+  inside a range. Tor, I2P and IPv6 peers never are (the list has only IPv4).
+- `node_bans` counts the entries `get_bans` covers: an address banned itself
+  or inside a banned range, a range banned itself or inside a wider one.
+  `monerod` lists each banned address and range on its own
+  (`block_host`, `block_subnet`), so a node started with the list bans all
+  431. `--ban-list` bans never end; DNS blocklist bans last 8 days and are
+  renewed.
+- A banned peer's connections are dropped, and it can't connect again, so a
+  connected peer on the list means the node doesn't ban it. That's when the
+  `spy` alert and the ▲ marks show. With the whole list banned, the lamp reads
+  NODE BANS ALL.
+- On a restricted port `get_connections` and `get_bans` are hidden, so the
+  lamp is off (NO DATA).
+- Updating the list is a change by hand: new files from a named commit, and
+  the hashes in `third_party/README.md`, `spylist.py` and
+  `tests/test_spylist.py`. Memstara never fetches it.
 
 ## Black marble watch (`memstara/flood.py`)
 
@@ -991,7 +1038,7 @@ The older panels, by letter:
   badge with the RPC address, local clock, PRIVACY, COMMANDS and SETTINGS buttons.
   **Alerts strip** below it: active alerts, problems first. **Status bar** at
   the bottom: RPC address, answer time, poll.
-- **A · Lamp wall** (`lamps`): the 12 lamps. Lit in
+- **A · Lamp wall** (`lamps`): the 13 lamps. Lit in
   the heads-up or problem colour with ▲ / ■ when not ok. New problem lamps
   flash until clicked (acknowledging is only a screen state and changes
   nothing on the node). Each lamp's tooltip says what it watches.
@@ -1006,14 +1053,17 @@ The older panels, by letter:
   over the eclipse limits are highlighted and named. Each blip stays put from
   one reading to the next and only moves as its connection ages, so one being
   read keeps its details; a reading without the list keeps the last one drawn,
-  dimmed, for 3 s (as the node tree does). The table is filled only while open.
+  dimmed, for 3 s (as the node tree does). A peer on the spy node list gets a
+  ▲ over its blip, a line under the scope and ▲ SPY LIST in the table. The
+  table is filled only while open.
 - **D · Route** (`route`): other nodes → your node → Tor sending and the
   dashboard (with the RPC answer time), from the connection counts and the Tor
   peers in `get_connections`.
 - **E · Ban list** (`bans`): the short bans (24 h or less left) with their
-  time left, a count of the longer ones, and the ranges at the eclipse limits
-  right now. Read-only: banning is left to `monerod`'s own console. A button
-  opens the command drawer.
+  time left, a count of the longer ones, the ranges at the eclipse limits
+  right now, and the spy node list: its version, how much of it the node bans
+  and how many of its peers are connected. Read-only: banning is left to
+  `monerod`'s own console. A button opens the command drawer.
 - **F · Traffic** (`traffic`): download / upload over the last 5 s and since
   start, last 15 minutes in the server's 5 s rows (the newest one moving with
   each reading).

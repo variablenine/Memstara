@@ -9,7 +9,7 @@ export const SCREENS = ["status", "network", "chain", "mempool", "traffic", "ban
 // which screen an alert belongs to; STATUS also shows the worst of all of them
 const ALERT_SCREEN = {
   node_down: "status", restarts: "status",
-  peers: "network", spread_out: "network", spread_in: "network", tor: "network",
+  peers: "network", spread_out: "network", spread_in: "network", tor: "network", spy: "network",
   syncing: "chain", no_blocks: "chain", reorg: "chain", disk: "chain", flood: "chain",
   double_spend: "mempool",
 };

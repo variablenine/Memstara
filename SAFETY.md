@@ -71,6 +71,16 @@ port).
       grep -n "not on_this_computer" memstara/nodelog.py memstara/poller.py
 
 - **Its own files** (below) and the screens in `web/`.
+- **The spy node list it comes with**, `third_party/mrl-ban-list/ban_list.txt`,
+  once at start, read-only, to flag connected peers on it. It's the Monero
+  Research Lab's list, copied byte for byte; [third_party/README.md](third_party/README.md)
+  says how to compare it with the original and check its signatures. Memstara
+  uses it only when its sha256 is the one written in `memstara/spylist.py`,
+  never downloads a newer one and never hands it to `monerod`.
+
+      grep -n "SHA256 = \|open(" memstara/spylist.py
+      sha256sum third_party/mrl-ban-list/ban_list.txt
+
 - **This computer's name, your user name, your real name and your home
   folder**, only so privacy mode can hide them.
 

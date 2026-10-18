@@ -6,7 +6,7 @@ import unittest
 
 import helpers
 from memstara import adapter
-from memstara.alerts import DEFAULT_CFG, RPC_IDS, TITLES, AlertEngine, empty_obs, tor_sending_active
+from memstara.alerts import DEFAULT_CFG, RPC_IDS, SPY_HOLD_S, TITLES, AlertEngine, empty_obs, tor_sending_active
 
 MIN = 60
 
@@ -17,7 +17,7 @@ def healthy(**kw):
               "tor_active": True, "synced": True, "height": 3780042, "target_height": 3780042,
               "block_seen_age": 60, "free_bytes": 400 * 10 ** 9, "reorgs": [], "double_spends": 0,
               "restarts": [], "out16": {"net": "100.66", "n": 2, "ips": ["100.66.1.9", "100.66.4.2"]},
-              "in24": {"net": "100.70.3", "n": 1, "ips": ["100.70.3.4"]}})
+              "in24": {"net": "100.70.3", "n": 1, "ips": ["100.70.3.4"]}, "spy": []})
     o.update(kw)
     return o
 
@@ -228,6 +228,62 @@ class SpreadTorTest(unittest.TestCase):
         self.assertFalse(tor_sending_active("off", True))
         self.assertFalse(tor_sending_active("auto", False), "no Tor peers seen since the node started")
         self.assertTrue(tor_sending_active("auto", True), "Tor peers seen since the node started")
+
+
+FIX = ("Starting monerod with --enable-dns-blocklist (mainnet only, and with --proxy only alongside "
+       "--proxy-allow-dns-leaks) or with --ban-list and Memstara's copy bans the whole list")
+
+
+class SpyListTest(unittest.TestCase):
+    def test_up_while_connected_and_ten_minutes_after(self):
+        h = Harness(cfg={"clock": "24h"})
+        a, _ = h.run(healthy())
+        self.assertNotIn("spy", a)
+        a, _ = h.run(healthy(spy=[("in", "100.70.9.1")]), 5)
+        self.assertEqual(a["spy"]["level"], "warn")
+        self.assertEqual(a["spy"]["title"], "SPY NODE LIST")
+        self.assertEqual(a["spy"]["text"], "1 peer on the MRL spy node list is connected (1 in). " + FIX)
+        self.assertEqual(a["spy"]["ips"], ["100.70.9.1"])
+        first = a["spy"]["since"]
+        self.assertEqual(h.events[-1]["kind"], "alert")
+        a, _ = h.run(healthy(spy=[("out", "100.66.9.2"), ("in", "100.70.9.1"), ("out", "100.66.9.3")]), 5)
+        self.assertEqual(a["spy"]["text"], "3 peers on the MRL spy node list are connected (2 out · 1 in). " + FIX)
+        self.assertEqual(a["spy"]["since"], first)
+        a, _ = h.run(healthy(spy=[]), 5)
+        self.assertTrue(a["spy"]["text"].startswith("Peers on the MRL spy node list were connected at "))
+        self.assertEqual(a["spy"]["ips"], ["100.66.9.2", "100.70.9.1", "100.66.9.3"])
+        n_events = len(h.events)
+        # back again within the ten minutes: the same alert, no new event
+        a, _ = h.run(healthy(spy=[("in", "100.70.9.1")]), SPY_HOLD_S - 60)
+        self.assertEqual(a["spy"]["since"], first)
+        a, _ = h.run(healthy(spy=[]), 60)
+        self.assertTrue(a["spy"]["text"].startswith("A peer on the MRL spy node list was connected at "))
+        self.assertEqual(len(h.events), n_events)
+        a, _ = h.run(healthy(spy=[]), SPY_HOLD_S - 65)
+        self.assertIn("spy", a)
+        a, _ = h.run(healthy(spy=[]), 5)
+        self.assertNotIn("spy", a)
+        self.assertEqual(h.events[-1], {"t": int(h.clock()), "level": "ok", "kind": "clear",
+                                        "text": "Cleared: SPY NODE LIST"})
+
+    def test_paused_without_the_connections(self):
+        h = Harness()
+        a, _ = h.run(healthy(spy=[("out", "100.66.9.2")]))
+        self.assertIn("spy", a)
+        # a restricted port, a list that couldn't be read, or the bundled list not usable
+        a, _ = h.run(healthy(spy=None), SPY_HOLD_S * 3)
+        self.assertNotIn("spy", a)
+        self.assertNotEqual(h.events[-1]["kind"], "clear", "paused, not cleared")
+
+    def test_a_sighting_after_a_long_pause_is_a_new_alert(self):
+        h = Harness()
+        a, _ = h.run(healthy(spy=[("out", "100.66.9.2")]))
+        first = a["spy"]["since"]
+        h.run(healthy(spy=None), 8 * 3600)          # the node was down overnight
+        a, _ = h.run(healthy(spy=[("out", "100.66.9.2")]), 5)
+        self.assertEqual(a["spy"]["since"], int(h.clock()))
+        self.assertGreater(a["spy"]["since"], first)
+        self.assertEqual(h.events[-1]["kind"], "alert", "raised again, so it's in the log again")
 
 
 class OrderTest(unittest.TestCase):

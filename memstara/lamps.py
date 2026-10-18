@@ -1,4 +1,4 @@
-"""The annunciator wall: 12 lamps, always in this order.
+"""The annunciator wall: 13 lamps, always in this order.
 
 state: ok | warn | bad | off. A lamp fed by an active alert carries that alert's
 level. `since` is when the lamp last left ok/off (null while ok or off).
@@ -12,7 +12,7 @@ LAMPS = [
     ("node", "NODE"), ("peers", "OUTGOING"), ("sync", "SYNCED"), ("block", "NEW BLOCK"),
     ("disk", "DISK SPACE"), ("reorg", "BLOCKS REPLACED"), ("double_spend", "DOUBLE SPEND"),
     ("restarts", "RESTARTS"), ("spread_out", "ECLIPSE · OUT"), ("spread_in", "ECLIPSE · IN"),
-    ("tor", "TOR SENDING"), ("flood", "BLACK MARBLE"),
+    ("tor", "TOR SENDING"), ("flood", "BLACK MARBLE"), ("spy", "SPY NODE LIST"),
 ]
 LAMP_IDS = [i for i, _ in LAMPS]
 # lamp id -> alert ids that light it
@@ -20,6 +20,7 @@ LAMP_ALERTS = {
     "node": ("node_down",), "peers": ("peers",), "sync": ("syncing",), "block": ("no_blocks",),
     "disk": ("disk",), "reorg": ("reorg",), "double_spend": ("double_spend",), "restarts": ("restarts",),
     "spread_out": ("spread_out",), "spread_in": ("spread_in",), "tor": ("tor",), "flood": ("flood",),
+    "spy": ("spy",),
 }
 RANK = {"bad": 3, "warn": 2, "ok": 1, "off": 0}
 
@@ -67,6 +68,11 @@ def compute(ctx: dict) -> list[tuple[str, str, str]]:
         if lvl and RANK[lvl] > RANK.get(state, 0):
             state = lvl
         out[lamp_id] = (state, value[:16])
+
+    def seen(t):
+        """SEEN 2:05 PM, or only the time where that wouldn't fit in 16 (privacy mode's 10:05 PM UTC)."""
+        c = clock_text(t, ctx.get("clock", "12h"))
+        return "SEEN " + c if len(c) <= 11 else c
 
     # ---- node
     if ctx.get("starting"):
@@ -123,7 +129,7 @@ def compute(ctx: dict) -> list[tuple[str, str, str]]:
         put("double_spend", "off", "NO DATA")
     else:
         a = A.get("double_spend")
-        put("double_spend", "ok", "SEEN %s" % clock_text(a["since"], ctx.get("clock", "12h")) if a else "NONE")
+        put("double_spend", "ok", seen(a["since"]) if a else "NONE")
 
     # ---- restarts
     if not live or restricted:
@@ -167,6 +173,24 @@ def compute(ctx: dict) -> list[tuple[str, str, str]]:
         put("flood", "off", "CAN'T READ")
     else:
         put("flood", "off", "NO DATA")
+
+    # ---- the MRL spy node list (spylist.py): listed peers connected, or how much the node bans
+    sp = (ctx.get("peers") or {}).get("spy") or {}
+    a = A.get("spy")
+    if sp.get("state") == "changed":
+        put("spy", "off", "LIST CHANGED")
+    elif sp.get("state") == "missing":
+        put("spy", "off", "LIST MISSING")
+    elif not live or sp.get("out") is None:
+        put("spy", "off", "NO DATA")
+    elif sp["out"] + sp["in"]:
+        put("spy", "ok", "%d CONNECTED" % (sp["out"] + sp["in"]))
+    elif a:
+        put("spy", "ok", seen(a["since"]))
+    elif sp.get("node_bans") is not None and sp["node_bans"] >= sp.get("entries", 0) > 0:
+        put("spy", "ok", "NODE BANS ALL")
+    else:
+        put("spy", "ok", "NONE CONNECTED")
 
     return [(i, out[i][0], out[i][1]) for i in LAMP_IDS]
 

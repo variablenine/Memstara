@@ -11,7 +11,7 @@ from .util import clock_style, clock_text
 
 # every id the core raises itself, all from the node's RPC
 RPC_IDS = ("node_down", "peers", "syncing", "no_blocks", "disk", "reorg",
-           "double_spend", "restarts", "spread_out", "spread_in", "tor", "flood")
+           "double_spend", "restarts", "spread_out", "spread_in", "tor", "flood", "spy")
 
 TITLES = {
     "node_down": "NODE NOT ANSWERING",
@@ -26,7 +26,9 @@ TITLES = {
     "spread_in": "ECLIPSE WATCH · IN",
     "tor": "NO TOR CONNECTIONS",
     "flood": "BLACK MARBLE WATCH",
+    "spy": "SPY NODE LIST",
 }
+SPY_HOLD_S = 600   # the spy-list alert stays up this long after the last listed peer left
 
 
 def title_for(alert_id: str, level: str | None = None) -> str:
@@ -85,6 +87,7 @@ def empty_obs() -> dict:
         "reorgs": [], "double_spends": None, "restarts": [],
         "out16": None, "in24": None,
         "flood": None,          # snapshot.chain.flood (flood.py)
+        "spy": None,            # [(dir, ip)] of connected peers on the spy node list (spylist.py)
     }
 
 
@@ -100,6 +103,8 @@ class AlertEngine:
         self._active: dict = {}
         self._ds_last = None   # (time, count) of the last double-spend sighting
         self._ds_first = None
+        self._spy_last = None  # (time, [(dir, ip)]) of the last reading with a listed peer connected
+        self._spy_first = None
 
     # condition clocks
     def _held(self, name, cond, now):
@@ -282,6 +287,34 @@ class AlertEngine:
             if d is not None and d >= grace("tor_min"):
                 add("tor", "warn", "No Tor connections for %d min: transactions you send will wait until "
                     "one connects" % mins(d), now - d)
+
+        # ---- peers on the MRL spy node list: up while one is connected and SPY_HOLD_S after the
+        # last one left, so a peer that keeps reconnecting is one alert, not one per visit
+        spy = obs.get("spy")
+        if spy is None:
+            paused.add("spy")
+        else:
+            if spy:
+                if self._spy_last is None or now - self._spy_last[0] >= SPY_HOLD_S:
+                    self._spy_first = now
+                self._spy_last = (now, list(spy))
+            if self._spy_last is not None and now - self._spy_last[0] < SPY_HOLD_S:
+                fix = ("Starting monerod with --enable-dns-blocklist (mainnet only, and with --proxy only "
+                       "alongside --proxy-allow-dns-leaks) or with --ban-list and Memstara's copy bans the whole list")
+                if spy:
+                    n_out = sum(1 for d, _ in spy if d == "out")
+                    bits = " · ".join(b for b in ("%d out" % n_out if n_out else "",
+                                                  "%d in" % (len(spy) - n_out) if len(spy) > n_out else "") if b)
+                    text = ("1 peer on the MRL spy node list is connected (%s). %s" % (bits, fix) if len(spy) == 1
+                            else "%d peers on the MRL spy node list are connected (%s). %s" % (len(spy), bits, fix))
+                else:
+                    t, was = self._spy_last
+                    text = "%s on the MRL spy node list %s connected at %s. %s" % (
+                        "A peer" if len(was) == 1 else "Peers", "was" if len(was) == 1 else "were",
+                        clock_text(t, clock), fix)
+                add("spy", "warn", text, self._spy_first, [ip for _, ip in (spy or self._spy_last[1])])
+            else:
+                self._spy_last = self._spy_first = None
 
         # ---- black marble watch: a surge of new outputs that a new transaction's decoys would come from.
         # Without an estimate (the node catching up or restarting) its clocks are kept, not reset:

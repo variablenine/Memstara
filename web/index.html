@@ -160,8 +160,10 @@
             <li><span class="lg-dot lg-in"></span>INCOMING</li>
             <li><span class="lg-dia"></span>TOR</li>
             <li><span class="lg-arc"></span>CLUSTER AT LIMIT</li>
+            <li><span class="lg-spy" aria-hidden="true">▲</span>ON THE SPY NODE LIST</li>
           </ul>
           <div class="spread" id="spread">—</div>
+          <div class="spread" id="peers-spy" data-level="warn" hidden></div>
           <p class="pcap">Every dot is one connection. Peers on the same company's servers land at the same angle, so a pile-up at one angle is a possible spy cluster. Further from the centre means connected longer (rings: 10 min, 1 h, 6 h).</p>
           <details class="tableview">
             <summary>TABLE VIEW</summary>
@@ -407,7 +409,7 @@
         <header class="ph">
           <span class="pid">E</span>
           <h2 id="h-bans">BAN LIST</h2>
-          <span class="psub" id="bans-sub" title="monerod RPC: get_bans (the console's bans)">WHAT YOUR NODE IS BANNING · READ-ONLY</span>
+          <span class="psub" id="bans-sub" title="monerod RPC: get_bans (the console's bans), get_connections">WHAT YOUR NODE IS BANNING · READ-ONLY</span>
         </header>
         <div class="pb">
           <div class="ctl-block">
@@ -419,6 +421,15 @@
             <div class="ctl-title">AT THE LIMITS NOW</div>
             <ul class="ctl-list" id="ban-flagged"></ul>
             <p class="ctl-hint">Too many connections from one company's servers (the ECLIPSE lamps). Memstara only reads, so it can't ban them; monerod's own console can (ban and unban).</p>
+          </div>
+          <div class="ctl-block ctl-wide" id="ban-spy-block">
+            <div class="ctl-title">MRL SPY NODE LIST</div>
+            <dl class="kv">
+              <div><dt>THE LIST</dt><dd id="ban-spy-list">—</dd></div>
+              <div><dt>YOUR NODE BANS</dt><dd id="ban-spy-bans">—</dd></div>
+              <div><dt>CONNECTED NOW</dt><dd id="ban-spy-now">—</dd></div>
+            </dl>
+            <p class="ctl-hint" id="ban-spy-hint">Nodes the Monero Research Lab found acting like spy nodes. The list comes with Memstara, unchanged (third_party/mrl-ban-list), and Memstara only flags the peers on it. To ban them, start monerod with --enable-dns-blocklist (the same list, kept current over DNS; mainnet only, and with --proxy only alongside --proxy-allow-dns-leaks) or with --ban-list and this file.</p>
           </div>
           <div class="ctl-row ctl-foot">
             <button class="btn" type="button" id="ban-all">ALL READ-ONLY COMMANDS</button>
