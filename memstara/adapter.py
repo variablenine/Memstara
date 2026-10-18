@@ -270,11 +270,11 @@ def parse_pool(res: dict, now: float) -> dict:
 
 
 def empty_pool() -> dict:
-    """No pool reading. list, list_wanted, list_cut, mined and check are pool.PoolList's."""
+    """No pool reading. list, list_wanted, list_unreadable, list_cut, mined and check are pool.PoolList's."""
     return {"txs": None, "bytes": None, "fee_total": None, "oldest_age_s": None,
             "double_spends": None, "failing": None, "not_relayed": None, "over_10m": None,
             "histogram": [], "histo_98pc": None,
-            "list": [], "list_wanted": 0, "list_cut": 0, "mined": [], "check": None}
+            "list": [], "list_wanted": 0, "list_unreadable": 0, "list_cut": 0, "mined": [], "check": None}
 
 
 def parse_headers(res: dict) -> list[dict]:

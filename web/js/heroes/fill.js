@@ -14,8 +14,11 @@
 // A transaction your node marked as a double spend still goes in: monerod
 // doesn't look at that mark when it builds a block (it was set on the one already
 // waiting when a second one tried to spend the same thing, and the first one is
-// still good). One your node hasn't passed on yet is left out, as monerod leaves
-// out what it hasn't sent on to the network.
+// still good). One your node hasn't passed on yet is left out, because no other
+// miner has it. (A block built by this node itself would take one sent to it with
+// do_not_relay: monerod counts those with the ones passed on.) One still on its
+// quiet first hops from node to node (Dandelion++) goes in, though monerod leaves
+// it out until it spreads: the node's RPC doesn't say which ones those are.
 //
 // pack() lays a box's transactions out as tiles, each one's volume its share of
 // the box, so how high they stack is how full the block is.
@@ -37,8 +40,8 @@ export function rewardAt(base, median, weight) {
 // base: the block reward without fees or penalty (null to skip the reward check).
 // skip: ids to leave out (already in a block).
 // Returns {inside, left, out, weight, fee}: inside and left in the order taken
-// (left: what doesn't fit or isn't worth it to the miner); out: rows monerod
-// wouldn't take as they stand (not passed on by your node yet).
+// (left: what doesn't fit or isn't worth it to the miner); out: rows no other
+// miner has (your node hasn't passed them on yet).
 export function pick(rows, maxWeight, base, skip = null) {
   const median = maxWeight / 2;
   const room = maxWeight - COINBASE_RESERVE;
@@ -121,12 +124,27 @@ export function squeeze(res, from, to) {
 
 // a block's tiles in the order taken, the ones up to `line` (the full-reward line,
 // half the box) packed below it and the rest from there up to the top, so a tile
-// stands above the line only when it was taken past it. Returns pack()'s shape.
+// stands above the line only when it was taken past it. Each part goes in biggest
+// first, so the small ones fill in around the big ones, and is squeezed down where
+// it would still stand more than SLACK above how full the box is by then (a few
+// tiles a column wide can stand well above the rest). Returns pack()'s shape, the
+// tiles in the order given.
+const SLACK = 0.1;
 export function stack(fracs, g, line = 0.5) {
   let n = 0, w = 0;
   while (n < fracs.length && w + fracs[n] <= line + 1e-12) w += fracs[n++];
-  const a = squeeze(pack(fracs.slice(0, n), g), 0, line);
-  const b = squeeze(pack(fracs.slice(n), g, a.top), a.top, 1);
+  const all = fracs.reduce((x, fr) => x + fr, 0);
+  const part = (lo, hi, lid, to) => {
+    const idx = [];
+    for (let i = lo; i < hi; i++) idx.push(i);
+    idx.sort((i, j) => fracs[j] - fracs[i] || i - j);
+    const res = squeeze(pack(idx.map((i) => fracs[i]), g, lid), lid, to);
+    const tiles = [];
+    idx.forEach((i, k) => { tiles[i - lo] = res.tiles[k]; });
+    return { tiles, top: res.top };
+  };
+  const a = part(0, n, 0, Math.min(line, w + SLACK));
+  const b = part(n, fracs.length, a.top, Math.min(1, all + SLACK));
   const tiles = [...a.tiles, ...b.tiles];
-  return { tiles, placed: tiles.length, top: n < fracs.length ? b.top : a.top };
+  return { tiles, placed: tiles.length, top: b.top };
 }

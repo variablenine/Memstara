@@ -174,6 +174,31 @@ class PoolListTest(unittest.TestCase):
         pl.update(node, node.totals(), 2002)
         self.assertEqual(node.calls, [], "only once per double spend")
 
+    def test_a_double_spend_in_a_big_pool_reads_the_flags_over_several_polls(self):
+        node, pl = self.node, self.pl
+        n = pool.DETAILS_PER_POLL + 150
+        for i in range(n):
+            node.add(fake_hash(i), i % 6, t=1000 + i)
+        pl.update(node, node.totals(), 2000)
+        pl.update(node, node.totals(), 2001)
+        self.assertEqual(len(pl.part()["list"]), n)
+        last = fake_hash(n - 1)
+        node.pool[last] = node.pool[last][:3] + (True,)
+        node.add(fake_hash(n), 0, t=3000)                 # and a new one meanwhile
+        node.calls.clear()
+        pl.update(node, node.totals(), 2002)
+        first = self.asked("get_transactions")[0]["txs_hashes"]
+        self.assertEqual(first[0], fake_hash(n), "the one not read at all goes first")
+        part = pl.part()
+        self.assertEqual(part["list_wanted"], 0, "the ones read again are listed already")
+        self.assertEqual({e[0]: e[4] for e in part["list"]}[last[:16]], 0, "not reached yet")
+        pl.update(node, node.totals(), 2003)
+        self.assertEqual({e[0]: e[4] for e in pl.part()["list"]}[last[:16]], FLAG_DOUBLE_SPEND,
+                         "the rest are read at the next poll")
+        node.calls.clear()
+        pl.update(node, node.totals(), 2004)
+        self.assertEqual(node.calls, [], "and then it's done")
+
     def test_a_big_pool_is_read_over_several_polls(self):
         node, pl = self.node, self.pl
         n = pool.DETAILS_PER_POLL + 50
@@ -233,7 +258,8 @@ class PoolListTest(unittest.TestCase):
         finally:
             REAL[0]["prunable_as_hex"] = real
         self.assertEqual(len(self.asked("get_transactions")), 3, "three tries, then left out")
-        self.assertEqual(pl.part()["list"], [])
+        part = pl.part()
+        self.assertEqual((part["list"], part["list_wanted"], part["list_unreadable"]), ([], 0, 1))
         self.assertEqual(len(self.logs), 1, "said once")
 
     def test_mined(self):

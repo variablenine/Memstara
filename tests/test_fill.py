@@ -69,8 +69,10 @@ def as_float32(n):
 def monerod_fill(rows, max_weight, base):
     """The ids fill_block_template takes (v5 and later): sorted by fee per byte, highest
     first, then the earliest received; each one added if it fits and the coinbase doesn't
-    drop. Rows not relayed yet are left out (monerod takes only what it has broadcast); a
-    double spend seen (flag 1) doesn't count, as monerod doesn't look at it."""
+    drop. A double spend seen (flag 1) doesn't count, as monerod doesn't look at it. Rows
+    not relayed yet (flag 2) are left out as pick() leaves them out, because no other
+    miner has them; monerod's own template on this node would still take one sent with
+    do_not_relay (relay_method::none counts in its legacy category)."""
     median = max_weight // 2
     room = 2 * median - RESERVED
     cand = sorted((r for r in rows if not r[4] & 2), key=lambda r: (-(r[2] / r[3]), r[1], r[0]))
@@ -230,6 +232,40 @@ class PackTest(unittest.TestCase):
             (res,) = run(("pack", [fracs, 5]))
             self.check(fracs, res, 5)
             self.assertLess(res["top"], sum(fracs) * 1.25 + 0.03, (fracs[:3], res["top"], sum(fracs)))
+
+    def test_a_block_under_the_line_stands_about_as_high_as_it_is_full(self):
+        # a third full, two big ones taken after the small ones: stood on the ring once
+        ws = [1500, 1530, 1530, 1500, 2900, 1530, 1530, 1540, 2100, 1530, 2100, 2100, 1540, 2100, 1530,
+              41220, 111237, 2900]
+        cases = [[w / 600000 for w in ws]]
+        rng = random.Random(8)
+        for _ in range(300):
+            cap = rng.choice([600000, 1200000])
+            fr, full, target = [], 0, rng.uniform(0.01, 0.5)
+            while True:
+                u = rng.random()
+                w = rng.uniform(1500, 2900) if u < 0.8 else rng.uniform(4000, 14000) if u < 0.96 else rng.uniform(30000, 150000)
+                if full + w / cap > target:
+                    break
+                fr.append(w / cap)
+                full += w / cap
+            if fr:
+                cases.append(fr)
+        res = run(*[("stack", [fr, 5, 0.5]) for fr in cases])
+        self.assertLess(res[0]["top"], 0.4)
+        kept = []
+        for fr, r in zip(cases, res):
+            ts = r["tiles"]
+            self.assertLessEqual(r["top"], min(0.5, sum(fr) + 0.1) + 1e-9)
+            # in the order given: every tile is its share, squeezed by the same amount
+            ks = [(t["x1"] - t["x0"]) * (t["z1"] - t["z0"]) * (t["y1"] - t["y0"]) / f for t, f in zip(ts, fr)]
+            self.assertAlmostEqual(min(ks), max(ks), places=6)
+            kept.append(ks[0])
+            for i in range(len(ts)):
+                for j in range(i + 1, len(ts)):
+                    a, b = ts[i], ts[j]
+                    self.assertFalse(all(min(a[k + "1"], b[k + "1"]) - max(a[k + "0"], b[k + "0"]) > 1e-9 for k in "xzy"))
+        self.assertGreater(sum(kept) / len(kept), 0.95, "hardly ever squeezed much")
 
     def test_stack_splits_at_the_line(self):
         rng = random.Random(4)

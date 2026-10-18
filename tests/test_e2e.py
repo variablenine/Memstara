@@ -31,7 +31,7 @@ from test_alerts import FIX as SPY_FIX
 TOP_KEYS = ["v", "generated", "t", "level", "source", "node", "chain", "peers", "mempool", "traffic", "alerts",
             "lamps", "events", "hist", "clock_style", "seq"]
 # everything the window gets about each waiting transaction (pool.PoolList.part)
-POOL_LIST_KEYS = {"list", "list_wanted", "list_cut", "mined", "check"}
+POOL_LIST_KEYS = {"list", "list_wanted", "list_unreadable", "list_cut", "mined", "check"}
 SOURCE_KEYS = {"mode", "rpc", "answering", "error", "latency_ms", "restricted", "last_ok", "poll_s",
                "dashboard_version", "bootstrap"}
 LAMP_IDS = ["node", "peers", "sync", "block", "disk", "reorg", "double_spend", "restarts", "spread_out", "spread_in",

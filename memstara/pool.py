@@ -33,12 +33,13 @@ from collections import deque
 from .util import as_bool, as_int
 
 RECHECK_S = 10            # read the hashes again at least this often (and wait this long after a failed read)
-DETAILS_PER_POLL = 200    # new transactions read per poll at most (the rest on the next ones)
+DETAILS_PER_POLL = 200    # transactions read per poll at most (the rest on the next ones)
 BATCH = 100               # transactions per get_transactions call (a restricted port's limit)
 MAX_LIST = 5000           # the newest this many go into the snapshot
 MINED_KEPT = 3            # the newest blocks whose transaction ids are kept
 ID_LEN = 16               # hex characters of a hash the window gets
 CHECK_RUNS = 3            # totals that differ this many reads in a row are reported
+TRIES = 3                 # reads of a transaction that can't be read before it's given up on
 
 FLAG_DOUBLE_SPEND = 1     # a double spend of it was seen
 FLAG_NOT_RELAYED = 2      # the node hasn't passed it on yet
@@ -226,6 +227,7 @@ class PoolList:
     def reset(self):
         self.known: dict = {}           # hash -> entry
         self.wanted: list = []          # hashes whose details are still to be read (in the node's order)
+        self.reread: list = []          # hashes read already whose flags are to be read again
         self.hashes_at = None           # when the hashes were last read
         self.totals = None              # (txs, bytes, fee, double spends) when they were
         self.mined: deque = deque(maxlen=MINED_KEPT)
@@ -246,7 +248,7 @@ class PoolList:
         ds_more = bool(totals and isinstance(totals[3], int) and totals[3] > self.ds_seen)
         if self.fail_at is not None and 0 <= now - self.fail_at < RECHECK_S:
             return                       # the last read failed: keep what is known and try again later
-        due = (self.hashes_at is None or totals != self.totals or self.wanted or ds_more
+        due = (self.hashes_at is None or totals != self.totals or self.wanted or self.reread or ds_more
                or not 0 <= now - self.hashes_at < RECHECK_S)
         if not due:
             return
@@ -267,17 +269,24 @@ class PoolList:
             del self.known[h]
         for h in [h for h in self.failed if h not in live]:
             del self.failed[h]
-        self.wanted = [h for h in hashes if h not in self.known and self.failed.get(h, 0) < 3]
+        self.wanted = [h for h in hashes if h not in self.known and self.failed.get(h, 0) < TRIES]
         if ds_more:
-            # a double spend was seen since: read the flags of everything again
-            self.wanted += [h for h in hashes if h in self.known]
+            # a double spend was seen since: read the flags of everything again, with
+            # what's left of each poll's reads after the ones not read at all
+            self.reread = [h for h in hashes if h in self.known]
             self.ds_seen = totals[3]
-        elif totals and isinstance(totals[3], int):
-            self.ds_seen = min(self.ds_seen, totals[3])
+        else:
+            self.reread = [h for h in self.reread if h in self.known]
+            if totals and isinstance(totals[3], int):
+                self.ds_seen = min(self.ds_seen, totals[3])
         todo, self.wanted = self.wanted[:DETAILS_PER_POLL], self.wanted[DETAILS_PER_POLL:]
+        room = DETAILS_PER_POLL - len(todo)
+        todo, self.reread = todo + self.reread[:room], self.reread[room:]
         for i in range(0, len(todo), BATCH):
             if not self._read_details(call, todo[i:i + BATCH], now):
-                self.wanted = todo[i:] + self.wanted     # later
+                rest = todo[i:]                          # later
+                self.wanted = [h for h in rest if h not in self.known] + self.wanted
+                self.reread = [h for h in rest if h in self.known] + self.reread
                 self.fail_at = now
                 break
         self._check(totals)
@@ -359,13 +368,16 @@ class PoolList:
     def part(self) -> dict:
         """mempool.list: [id, arrived (unix s), fee (piconero), weight (bytes), flags], oldest
         first, at most MAX_LIST (the newest); list_wanted: transactions waiting whose details
-        aren't read yet; mined: the newest blocks' transaction ids; check: the totals check."""
+        aren't read yet; list_unreadable: waiting ones given up on (their details couldn't be
+        read); list_cut: read ones past the newest MAX_LIST; mined: the newest blocks'
+        transaction ids; check: the totals check."""
         items = sorted(self.known.items(), key=lambda kv: (kv[1]["t"], kv[0]))
         if len(items) > MAX_LIST:
             items = items[-MAX_LIST:]
         return {
             "list": [[h[:ID_LEN], e["t"], e["fee"], e["weight"], e["flags"]] for h, e in items],
             "list_wanted": len(self.wanted),
+            "list_unreadable": sum(1 for h, n in self.failed.items() if n >= TRIES and h not in self.known),
             "list_cut": max(0, len(self.known) - MAX_LIST),
             "mined": list(self.mined),
             "check": self.check,

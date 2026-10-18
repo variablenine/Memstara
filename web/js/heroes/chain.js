@@ -62,6 +62,7 @@ const PITCH_MAX = 1.2;
 const MONO = "\"Plex Mono\", ui-monospace, monospace";
 const LABEL_FONT = `600 10.5px ${MONO}`;   // small widely spaced captions on the picture
 const TIMER_FONT = `400 17px ${MONO}`;    // the next block's timer
+const MORE_FONT = `500 9.5px ${MONO}`;    // what's left waiting, over the next block
 
 // ---- the line the blocks stand on: it heads off to the left and bends away
 // from you, straightening out in the distance. s = distance along it from the
@@ -251,15 +252,17 @@ export default function create(body, env) {
     }
     if (!touched) cam.reset();
   }
-  // how far down the picture the left-hand readouts reach (0 when they aren't over it)
+  // how far down the picture the readouts reach (0 when they aren't over it)
   function readoutsBottom() {
     if (getComputedStyle(facts).position !== "absolute") return 0;
-    return Math.max(0, factsL.getBoundingClientRect().bottom - canvas.getBoundingClientRect().top);
+    return Math.max(0, facts.getBoundingClientRect().bottom - canvas.getBoundingClientRect().top);
   }
-  // where the right-hand readouts lie over the picture ({left, bottom} in its pixels), or null
+  // where the right-hand readouts lie over the picture ({left, bottom} in its pixels), or
+  // null (measured again each second while shown: how wide they are follows what they say)
   function readoutsRight() {
     if (getComputedStyle(facts).position !== "absolute") return null;
     const c = canvas.getBoundingClientRect(), r = factsR.getBoundingClientRect();
+    if (!r.width) return null;    // not laid out
     return { left: r.left - c.left, bottom: Math.max(0, r.bottom - c.top) };
   }
 
@@ -427,18 +430,32 @@ export default function create(body, env) {
   // the next block as your node's pool would fill it (fill.js), and its tiles
   let primed = false;              // a reading has filled it once (later arrivals drop in)
   let listedPart = false;          // the last pool list left some waiting transactions out
+  let poolT = null;                // when the last reading with the pool came (clk())
+  let poolOff = false;             // the last reading had no pool
   // a tile no longer wanted fades out while the picture is drawn, and just goes while it isn't
   const letGo = (id, tl, animate) => { if (animate) tl.aT = 0; else tiles.delete(id); };
   function refill(snap, animate) {
     const t = clk();
     const mp = snap.mempool || {};
+    const limbo = Math.max(LIMBO_S, 2 * (f.isNum(snap.source?.poll_s) ? snap.source.poll_s : 1));
     // no pool reading this time (the node's pool totals didn't come): keep the last
-    // picture as it is rather than show an empty pool
-    if (!f.isNum(mp.txs)) { filled = null; return; }
+    // picture for a reading or two rather than show an empty pool, then let it go
+    poolOff = !f.isNum(mp.txs);
+    if (poolOff) {
+      filled = null;
+      if (poolT === null || t - poolT > limbo) for (const [id, tl] of tiles) letGo(id, tl, animate);
+      return;
+    }
     const list = Array.isArray(mp.list) ? mp.list : [];
-    const unread = f.isNum(mp.list_wanted) ? mp.list_wanted : 0;   // waiting, details not read yet
-    const cut = f.isNum(mp.list_cut) ? mp.list_cut : 0;            // waiting, past the newest 5000 listed
-    listedPart = unread + cut > 0;
+    const unread = f.isNum(mp.list_wanted) ? mp.list_wanted : 0;               // waiting, details not read yet
+    const unreadable = f.isNum(mp.list_unreadable) ? mp.list_unreadable : 0;   // waiting, details couldn't be read
+    const cut = f.isNum(mp.list_cut) ? mp.list_cut : 0;                        // waiting, past the newest 5000 listed
+    const unlisted = unread + unreadable + cut;
+    listedPart = unlisted > 0;
+    // after readings with no pool (or none at all), what left the list meanwhile went
+    // in the blocks of that time: it isn't held back for a block still to come
+    const goneAt = poolT !== null && t - poolT > limbo ? poolT : t;
+    poolT = t;
     const fresh = new Set();
     const live = new Set();
     for (const r of list) {
@@ -449,7 +466,7 @@ export default function create(body, env) {
     }
     for (const [id, e] of rows) {
       if (live.has(id)) continue;
-      if (!e.gone) e.gone = t;
+      if (!e.gone) e.gone = goneAt;
       else if (t - e.gone > ROWS_KEEP_S) rows.delete(id);
     }
     if (!cap || !ghostOn()) {
@@ -461,7 +478,6 @@ export default function create(body, env) {
     // block yet (the block that took it may come with the next reading); not what
     // a recent block already took (the newest block at each height: one the network
     // replaced gave its transactions back to the pool)
-    const limbo = Math.max(LIMBO_S, 2 * (f.isNum(snap.source?.poll_s) ? snap.source.poll_s : 1));
     const byHeight = new Map();
     for (const m of Array.isArray(mp.mined) ? mp.mined : []) if (m && f.isNum(m.height)) byHeight.set(m.height, m);
     const taken = new Set();
@@ -486,20 +502,22 @@ export default function create(body, env) {
     }
     for (const [id, tl] of tiles) if (!want.has(id)) letGo(id, tl, animate);   // gone, or pushed out
     primed = true;
-    // what's left waiting: the ones that don't fit, and those not in the list (past
-    // the newest 5000, or not read yet). Counted from the pool's own reading of the
-    // list, so a transaction privacy mode keeps off the list isn't counted as left
+    // what's left waiting: the ones that don't fit, and those not in the list (not
+    // read yet or unreadable, or past the newest 5000). Counted from the pool's own
+    // reading of the list, so a transaction privacy mode keeps off the list isn't
+    // counted as left; its weight can still be in the bytes when some aren't listed
+    // (they're the node's total less the ones listed)
     const sumOf = (rs) => rs.reduce((x, r) => x + r[3], 0);
     let leftN = p.left.length, leftB = sumOf(p.left);
-    if (unread + cut > 0) {
-      leftN += unread + cut;
+    if (unlisted > 0) {
+      leftN += unlisted;
       if (f.isNum(mp.bytes)) leftB += Math.max(0, mp.bytes - sumOf(list.filter((r) => Array.isArray(r))));
     }
     const guessed = list.some((r) => Array.isArray(r) && (r[4] | 0) & 4);   // pool.py FLAG_TIME_GUESSED
     filled = {
       n: p.inside.length, weight: p.weight, leftN, leftB, more: Math.max(0, leftB - sumOf(over)), out: p.out.length,
       doubled: p.inside.filter((r) => (r[4] | 0) & 1).length,   // pool.py FLAG_DOUBLE_SPEND
-      unread, cut, guessed, guess: base === null,
+      unread, unreadable, cut, guessed, guess: base === null,
       failing: f.isNum(mp.failing) ? mp.failing : 0,
     };
   }
@@ -562,21 +580,29 @@ export default function create(body, env) {
       }
       rows.push({ note: "Monero aims for a block every 2 minutes, but each wait is luck: half come within 1m 23s, 9 in 10 within 4m 36s. The gap between the newest block and this box grows with the wait." });
       if (filled) {
-        rows.push({ note: "The box is the biggest block allowed. Each tile is one of your node's waiting transactions, sized by its weight, taken the way monerod builds a block: the most fee per byte first, and past the full-reward line (the dashed ring) only while the fee makes up for the reward the miner loses. Miners build their own blocks, so the real one can differ. What doesn't fit waits above the box." });
+        rows.push({ note: "The box is the biggest block allowed. Each tile is one of your node's waiting transactions, sized by its weight, taken the way monerod builds a block: the most fee per byte first, and past the full-reward line (the dashed ring) only while the fee makes up for the reward the miner loses. Miners build their own blocks, so the real one can differ. A transaction still on its quiet first hops from node to node (Dandelion++) can show here before miners have it. What doesn't fit waits above the box." });
         if (filled.guess) rows.push({ note: "No recent block's reward is known yet, so the box fills only up to the full-reward line." });
         if (filled.unread) rows.push({ note: `Still reading ${f.plural(filled.unread, "waiting transaction", "waiting transactions")} from your node; the box is filled from the ones read so far.` });
+        if (filled.unreadable) {
+          const one = filled.unreadable === 1;
+          rows.push({ note: `The dashboard couldn't read ${f.plural(filled.unreadable, "waiting transaction", "waiting transactions")} from your node, so the box leaves ${one ? "it" : "them"} out.` });
+        }
         if (filled.cut) rows.push({ note: `Only the newest ${f.num(MAX_LISTED)} of the waiting transactions are listed. At the same fee per byte monerod takes the ones waiting longest first, so the counts hold but which tiles would go in is a guess.` });
         if (filled.guessed) rows.push({ note: "Your node doesn't say when it got each transaction on this RPC port, so among the same fee per byte which one goes first is a guess." });
         if (filled.doubled) {
           const one = filled.doubled === 1;
-          rows.push({ note: `Your node saw a double spend tried against ${one ? "a transaction" : `${f.num(filled.doubled)} transactions`} in the box. monerod still takes ${one ? "it" : "them"}; if the other one went in a block first, ${one ? "it never will" : "those never will"}.` });
+          rows.push({ note: `Your node saw a double spend tried against ${one ? "a transaction" : `${f.num(filled.doubled)} transactions`} in the box. monerod still takes ${one ? "it; if the other one went in a block first, it never will" : "them; if the other spends went in a block first, those never will"}.` });
         }
         // (monerod only counts these on a node that builds blocks: a miner's, or one serving P2Pool)
         if (filled.failing) {
           const one = filled.failing === 1;
-          rows.push({ note: `${one ? "A waiting transaction fails" : `${f.num(filled.failing)} waiting transactions fail`} monerod's checks, so it won't put ${one ? "it" : "them"} in a block; which ${one ? "one" : "ones"} can't be told apart here.` });
+          rows.push({ note: one
+            ? "A waiting transaction fails monerod's checks, so monerod won't put it in a block. The dashboard can't tell which one it is, so it may be among the tiles."
+            : `${f.num(filled.failing)} waiting transactions fail monerod's checks, so monerod won't put them in a block. The dashboard can't tell which ones they are, so they may be among the tiles.` });
         }
         if (filled.out) rows.push({ note: `Left out: ${f.plural(filled.out, "transaction", "transactions")} your node hasn't passed on yet, which miners don't have.` });
+      } else if (poolOff) {
+        rows.push({ note: "Your node's waiting transactions couldn't be read at the last reading, so the box may be out of date or empty." });
       }
       if (a !== null && !f.isNum(node.last_block_seen)) {
         rows.push({ note: "The dashboard didn't see the newest block arrive, so the wait counts from the time its miner gave it and can read minutes long." });
@@ -605,7 +631,7 @@ export default function create(body, env) {
         { label: "SEEN WAITING", value: `${f.plural(known.length, "TX", "TXS")} · ${f.bytes(kb)}` },
         { label: "THE REST", value: f.bytes(Math.max(0, b.weight - kb)) },
         { note: it.partial
-          ? "The tiles are the transactions it took that Memstara had listed waiting; the plain one is the rest of the block: the miner's own transaction (its reward), any your node never had, and any Memstara hadn't listed (it lists the newest 5000, and reads up to 200 new ones at each reading)."
+          ? `The tiles are the transactions it took that the dashboard had listed waiting; the plain one is the rest of the block: the miner's own transaction (its reward), any your node never had, and any the dashboard hadn't listed (it lists up to the newest ${f.num(MAX_LISTED)}, and a rush of new ones takes it a few readings).`
           : "The tiles are the transactions it took that your node had seen waiting; the plain one is the rest of the block: the miner's own transaction (its reward) and any your node never had." },
       );
     }
@@ -1059,7 +1085,7 @@ export default function create(body, env) {
         // picked: still dashed (it isn't a block yet), lit white
         if (it === selected || it === hovered) drawBox(ctx, ghost.s, ghost.e, rgb, ghost.alpha, { faces: 0, glow: 0, dashed: true, white: 0.75 });
         // the full-reward line, a dashed ring at half height
-        ghost.ring = filled ? ringAt(ctx, ghost.s, ghost.e, 0.5, head, 0.55 * ghost.alpha) : null;
+        ghost.ring = cap ? ringAt(ctx, ghost.s, ghost.e, 0.5, head, 0.55 * ghost.alpha) : null;
         ctx.lineDashOffset = 0;
         if (corners(ghost.s, ghost.e)) drawTiles(ctx, ghost.s, ghost.e, tiles.values(), dim, acc);
         continue;
@@ -1166,14 +1192,27 @@ export default function create(body, env) {
       const a = age();
       const late = lateLevel();
       const moreText = filled && filled.more > 0 ? `+ ${f.bytes(filled.more)} MORE WAITING` : "";
-      // the captions stay on the picture and below the readouts over its top corner
-      // (a tall stack above the box would lift them into those)
+      const word = late ? f.flag(late, "LATE · NEXT BLOCK") : "NEXT BLOCK";
+      const tm = a === null ? "—" : f.wait(a);
+      const moreHalf = textW(ctx, moreText, MORE_FONT, 1) / 2;
+      // the word and the timer share a middle, moved in from the side so the longer late wording isn't cut off
+      const half = Math.max(textW(ctx, word, LABEL_FONT, 2), textW(ctx, tm, TIMER_FONT)) / 2;
+      // the captions stay on the picture, and clear of the readouts over its top corner
+      // (a tall stack above the box would lift them into those): moved left by up to
+      // half their width, then down below them. Both grow over the last 40 px before
+      // they'd meet, so a view drifting past doesn't make them jump
       if (p) {
         const reach = moreText ? 44 + 12 : 26 + 12;
-        const half = Math.max(textW(ctx, moreText, `500 9.5px ${MONO}`, 1), textW(ctx, "LATE · NEXT BLOCK", LABEL_FONT, 2)) / 2;
-        let least = reach;
-        if (rightBox && p.x + half > rightBox.left) least = Math.max(least, rightBox.bottom + reach);
-        if (p.y < least) p = { ...p, y: Math.min(least, h - 8) };
+        let under = 0;
+        if (rightBox) {
+          const rightOf = (x) => Math.max(inside(x, half, w) + half, moreText ? inside(x, moreHalf, w) + moreHalf : 0);
+          const room = rightBox.left - 48;                                       // 40 px to ease over, then 8 clear
+          const need = clamp((reach + rightBox.bottom + 8 - p.y) / 20, 0, 1);   // they'd reach up beside the readouts
+          const nudge = need * clamp(rightOf(p.x) - room, 0, half);
+          p = { ...p, x: p.x - nudge };
+          under = clamp((rightOf(p.x) - room) / 40, 0, 1) * rightBox.bottom;
+        }
+        if (p.y < reach + under) p = { ...p, y: Math.min(reach + under, h - 8) };
       }
       // the full-reward ring's name beside it, where the box is big enough on screen
       const rp = ghost.ring;
@@ -1181,14 +1220,11 @@ export default function create(body, env) {
         text(ctx, "FULL REWARD", rp.x + 6, rp.y + 3, { font: `500 9px ${MONO}`, rgb: head, a: 0.8 * ghost.alpha, gap: 1 });
       }
       if (p && moreText) {
-        text(ctx, moreText, inside(p.x, textW(ctx, moreText, `500 9.5px ${MONO}`, 1) / 2, w), p.y - 44, { font: `500 9.5px ${MONO}`, rgb: ink2, a: 0.9 * ghost.alpha, align: "center", gap: 1 });
+        text(ctx, moreText, inside(p.x, moreHalf, w), p.y - 44, { font: MORE_FONT, rgb: ink2, a: 0.9 * ghost.alpha, align: "center", gap: 1 });
       }
       if (p) {
         const rgbT = late === "bad" ? rgbBad : late === "warn" ? rgbWarn : ink;
-        const word = late ? f.flag(late, "LATE · NEXT BLOCK") : "NEXT BLOCK";
-        const tm = a === null ? "—" : f.wait(a);
-        // both lines share a middle, moved in from the side so the longer late wording isn't cut off
-        const x = inside(p.x, Math.max(textW(ctx, word, LABEL_FONT, 2), textW(ctx, tm, TIMER_FONT)) / 2, w);
+        const x = inside(p.x, half, w);
         text(ctx, word, x, p.y - 26, { font: LABEL_FONT, rgb: late ? rgbT : head, a: ghost.alpha, align: "center", gap: 2 });
         text(ctx, tm, x, p.y - 6, { font: TIMER_FONT, rgb: rgbT, a: ghost.alpha, align: "center", glow: true });
       }
@@ -1318,6 +1354,7 @@ export default function create(body, env) {
     }
     setData(hAge, "level", late);
     setData(hAgeUnit, "level", late);
+    if (shown) rightBox = readoutsRight();
   }
 
   // while shown: the readout, the timer and any details showing step on just as the

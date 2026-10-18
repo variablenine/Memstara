@@ -8,7 +8,7 @@
 /* readouts over the top corners */
 .bs-facts {
   position: absolute; left: 0; right: 0; top: 0; z-index: 2; pointer-events: none;
-  display: flex; justify-content: space-between; gap: 24px; padding: 12px 16px 0;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; padding: 12px 16px 0;
   font-family: var(--font-label); letter-spacing: var(--track); font-size: var(--fs-0); color: var(--ink-3);
 }
 .bs-facts-l, .bs-facts-r { display: grid; gap: 3px; align-content: start; min-width: 0; }
